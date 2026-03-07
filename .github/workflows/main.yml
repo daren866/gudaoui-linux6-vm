@@ -157,6 +157,7 @@ jobs:
         scripts/config --enable ACPI_BUTTON
         scripts/config --enable ACPI_POWER_METER
         scripts/config --enable ACPI_PROC_EVENT
+        scripts/config --enable ACPI_SYSTEM_POWER_STATES_SUPPORT
         
         make olddefconfig
 
@@ -291,11 +292,18 @@ jobs:
         
         chmod +x rootfs/usr/local/bin/calc
         
-        # 创建 reboot/poweroff 的包装脚本（确保它们正常工作）
+        # 创建 reboot/poweroff 的包装脚本（修复版，确保proc已挂载）
         cat > rootfs/usr/local/bin/reboot << 'EOF'
         #!/bin/sh
-        # reboot command wrapper
+        # reboot command wrapper with proc check
+        
+        # 确保 /proc 已挂载
+        if ! mountpoint -q /proc; then
+            mount -t proc proc /proc
+        fi
+        
         echo "System is rebooting..."
+        sync
         /bin/busybox reboot -f
         EOF
         
@@ -303,19 +311,26 @@ jobs:
         
         cat > rootfs/usr/local/bin/poweroff << 'EOF'
         #!/bin/sh
-        # poweroff command wrapper
+        # poweroff command wrapper with proc check
+        
+        # 确保 /proc 已挂载
+        if ! mountpoint -q /proc; then
+            mount -t proc proc /proc
+        fi
+        
         echo "System is powering off..."
+        sync
         /bin/busybox poweroff -f
         EOF
         
         chmod +x rootfs/usr/local/bin/poweroff
         
-        # 创建符号链接
+        # 创建 halt 命令的符号链接
         cd rootfs/usr/bin
-        ln -sf ../local/bin/about about
-        ln -sf ../local/bin/calc calc
         ln -sf ../local/bin/reboot reboot
         ln -sf ../local/bin/poweroff poweroff
+        ln -sf poweroff halt
+        ln -sf reboot reboot
         cd ../../..
         
         # 创建 init 脚本（修复版）
@@ -332,7 +347,7 @@ jobs:
         mount -t devtmpfs none /dev
         mount -t tmpfs tmpfs /tmp
         
-        # 创建必要的设备节点（如果devtmpfs没有自动创建）
+        # 创建必要的设备节点
         mknod -m 660 /dev/tty1 c 4 1 2>/dev/null || true
         mknod -m 660 /dev/tty2 c 4 2 2>/dev/null || true
         mknod -m 660 /dev/tty3 c 4 3 2>/dev/null || true
@@ -344,8 +359,8 @@ jobs:
         # 配置loopback网络
         ip link set lo up
         
-        # 设置Ctrl-Alt-Del 为重启
-        trap "reboot" 2
+        # 设置信号处理
+        trap "reboot" 2   # Ctrl-Alt-Del
         
         # 获取内存大小
         MEM_SIZE=$(grep MemTotal /proc/meminfo | awk '{print int($2/1024)}')
@@ -370,23 +385,12 @@ jobs:
         
         chmod +x rootfs/init
         
-        # 创建 inittab 文件（可选，但有助于管理init）
-        cat > rootfs/etc/inittab << 'EOF'
-        ::sysinit:/bin/mount -t proc proc /proc
-        ::sysinit:/bin/mount -t sysfs sysfs /sys
-        ::sysinit:/bin/mount -t devtmpfs devtmpfs /dev
-        ::sysinit:/bin/ip link set lo up
-        ::ctrlaltdel:/sbin/reboot
-        ::shutdown:/sbin/swapoff -a
-        ::shutdown:/bin/umount -a -r
-        EOF
-        
         # 创建基本配置文件
         echo "root:x:0:0:root:/root:/bin/sh" > rootfs/etc/passwd
         echo "root:x:0:" > rootfs/etc/group
         echo "nameserver 8.8.8.8" > rootfs/etc/resolv.conf
         
-        # 创建fstab文件
+        # 创建 fstab 文件
         cat > rootfs/etc/fstab << 'EOF'
         proc            /proc           proc    defaults    0 0
         sysfs           /sys            sysfs   defaults    0 0
@@ -416,12 +420,12 @@ jobs:
         set timeout=3
         
         menuentry "GudaoUI Linux V1" {
-          linux /boot/vmlinuz quiet console=tty0 console=ttyS0
+          linux /boot/vmlinuz quiet console=tty0
           initrd /boot/initramfs.cpio
         }
         
         menuentry "GudaoUI Linux V1 (Debug)" {
-          linux /boot/vmlinuz loglevel=7 console=tty0 console=ttyS0
+          linux /boot/vmlinuz loglevel=7 console=tty0
           initrd /boot/initramfs.cpio
         }
         EOF
@@ -461,7 +465,7 @@ jobs:
           - 最小 rootfs 文件系统
           - **about 命令** - 显示系统信息
           - **calc 命令** - 简单计算器
-          - **修复 reboot/poweroff 命令**
+          - **修复 reboot/poweroff 命令**（自动挂载/proc）
           
           ### 💻 使用说明
           1. 下载 ISO 文件
@@ -531,8 +535,8 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
         
         echo "### 修复功能" >> $GITHUB_STEP_SUMMARY
-        echo "- **reboot命令**: 已修复，现在可以正常重启系统" >> $GITHUB_STEP_SUMMARY
-        echo "- **poweroff命令**: 已修复，现在可以正常关闭系统" >> $GITHUB_STEP_SUMMARY
+        echo "- **reboot命令**: 已修复，现在会自动检查并挂载/proc，然后重启系统" >> $GITHUB_STEP_SUMMARY
+        echo "- **poweroff命令**: 已修复，现在会自动检查并挂载/proc，然后关闭系统" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         
         echo "### 输出文件" >> $GITHUB_STEP_SUMMARY
