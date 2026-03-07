@@ -237,11 +237,14 @@ jobs:
         # 创建 about 命令脚本
         cat > rootfs/usr/local/bin/about << 'EOF'
         #!/bin/sh
-        # about command - display system information
-        
+        # about command
+        echo "====================="
         echo "GudaoUI linux V1"
-        echo "myweb: gudaoweb.pages.dev"
-        echo "linux: $(uname -r)"
+        echo "====================="
+        echo "Enter 'about' to query system information"
+        MEMORY=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+        MEMORY_MB=$((MEMORY / 1024))
+        echo "Running memory size: ${MEMORY_MB}MB"
         EOF
         
         chmod +x rootfs/usr/local/bin/about
@@ -259,11 +262,15 @@ jobs:
         # 设置 PATH 包含自定义命令目录
         export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin
         
-        echo "========================================="
-        echo "Mini Linux 6.18 with BusyBox"
-        echo "========================================="
-        echo ""
-        echo "输入 'about' 查看系统信息"
+        echo "====================="
+        echo "GudaoUI linux V1"
+        echo "====================="
+        echo "Enter 'about' to query system information"
+        
+        # 获取内存信息
+        MEMORY=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+        MEMORY_MB=$((MEMORY / 1024))
+        echo "Running memory size: ${MEMORY_MB}MB"
         echo ""
         
         mount -t proc none /proc
@@ -271,12 +278,9 @@ jobs:
         mount -t devtmpfs none /dev
         ip link set lo up
         
-        echo "系统信息:"
-        echo "- 内核版本: $(cat /proc/version | cut -d' ' -f3)"
-        echo "- 可用内存: $(grep MemTotal /proc/meminfo | awk '{print $2/1024 " MB"}')"
         echo ""
-        echo "可用命令: ls, cat, ps, top, vi, grep, about"
-        echo "输入 poweroff 关机"
+        echo "Available commands: ls, cat, ps, top, vi, grep, about"
+        echo "Type 'poweroff' to shutdown"
         echo ""
         
         exec /bin/sh
@@ -321,12 +325,12 @@ jobs:
         set default=0
         set timeout=3
         
-        menuentry "Mini Linux 6.18" {
+        menuentry "GudaoUI Linux V1" {
           linux /boot/vmlinuz quiet
           initrd /boot/initramfs.cpio
         }
         
-        menuentry "Mini Linux 6.18 (Debug)" {
+        menuentry "GudaoUI Linux V1 (Debug)" {
           linux /boot/vmlinuz loglevel=7
           initrd /boot/initramfs.cpio
         }
@@ -354,7 +358,7 @@ jobs:
         name: ${{ steps.set-release-info.outputs.release_title }}
         tag_name: ${{ steps.set-release-info.outputs.release_tag }}
         body: |
-          ## 🎉 Linux 6.18 虚拟机版发布
+          ## 🎉 GudaoUI Linux V1 发布
             
           ### 📦 构建信息
           - **构建时间**: $(date '+%Y-%m-%d %H:%M:%S')
@@ -365,13 +369,13 @@ jobs:
           - Linux 内核 6.18 (虚拟机优化版)
           - BusyBox 1.36.1 (静态编译)
           - 最小 rootfs 文件系统
-          - **新增 about 命令** - 显示系统信息
+          - **about 命令** - 查询系统信息
             
           ### 💻 使用说明
           1. 下载 ISO 文件
           2. 在虚拟机软件中加载 ISO
-          3. 启动后会自动进入 Shell
-          4. 输入 `about` 命令查看系统信息
+          3. 启动后会自动显示系统信息
+          4. 输入 `about` 命令再次查看系统信息
             
           ### ⚡ 虚拟机优化
           已启用 VirtIO 驱动，适用于主流虚拟化平台：
@@ -405,12 +409,20 @@ jobs:
         echo "- **Unix时间戳**: ${{ steps.set-release-info.outputs.release_number }}" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         
+        echo "### 系统信息" >> $GITHUB_STEP_SUMMARY
+        echo "- **系统名称**: GudaoUI Linux V1" >> $GITHUB_STEP_SUMMARY
+        echo "- **内核版本**: Linux 6.18" >> $GITHUB_STEP_SUMMARY
+        echo "- **BusyBox版本**: 1.36.1" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
         echo "### 新增功能" >> $GITHUB_STEP_SUMMARY
         echo "- **about命令**: 已添加，显示系统信息" >> $GITHUB_STEP_SUMMARY
         echo "  \`\`\`" >> $GITHUB_STEP_SUMMARY
+        echo "  =====================" >> $GITHUB_STEP_SUMMARY
         echo "  GudaoUI linux V1" >> $GITHUB_STEP_SUMMARY
-        echo "  myweb: gudaoweb.pages.dev" >> $GITHUB_STEP_SUMMARY
-        echo "  linux: \$(uname -r)" >> $GITHUB_STEP_SUMMARY
+        echo "  =====================" >> $GITHUB_STEP_SUMMARY
+        echo "  Enter 'about' to query system information" >> $GITHUB_STEP_SUMMARY
+        echo "  Running memory size: XMB" >> $GITHUB_STEP_SUMMARY
         echo "  \`\`\`" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         
