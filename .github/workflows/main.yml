@@ -191,9 +191,11 @@ jobs:
         # 静态编译
         sed -i 's/# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
         
-        # 启用自定义脚本支持（用于about命令）
+        # 启用自定义脚本支持（用于about和calc命令）
         sed -i 's/# CONFIG_ASH is not set/CONFIG_ASH=y/' .config
         sed -i 's/# CONFIG_SH is not set/CONFIG_SH=y/' .config
+        sed -i 's/# CONFIG_ASH_MATH_SUPPORT is not set/CONFIG_ASH_MATH_SUPPORT=y/' .config
+        sed -i 's/# CONFIG_ASH_MATH_SUPPORT_64 is not set/CONFIG_ASH_MATH_SUPPORT_64=y/' .config
         
         # 禁用 TC（解决内核6.8+兼容性问题）
         sed -i 's/CONFIG_TC=y/# CONFIG_TC is not set/' .config 2>/dev/null || true
@@ -246,12 +248,42 @@ jobs:
         
         chmod +x rootfs/usr/local/bin/about
         
+        # 创建 calc 命令脚本 - 简单的计算器
+        cat > rootfs/usr/local/bin/calc << 'EOF'
+        #!/bin/sh
+        # calc command - simple calculator
+        
+        if [ $# -eq 0 ]; then
+            echo "Usage: calc <expression>"
+            echo "Example: calc 1+1"
+            echo "Example: calc (2*2)+2"
+            exit 1
+        fi
+        
+        # 将参数合并为一个字符串
+        expression="$*"
+        
+        # 使用 awk 进行计算（支持浮点数）
+        result=$(awk "BEGIN {print $expression}")
+        
+        # 检查结果是否为整数
+        if [ "$result" = "${result%.*}" ]; then
+            echo "$result"
+        else
+            # 如果是小数，保留两位
+            printf "%.2f\n" "$result"
+        fi
+        EOF
+        
+        chmod +x rootfs/usr/local/bin/calc
+        
         # 创建符号链接到 PATH
         cd rootfs/usr/bin
         ln -sf ../local/bin/about about
+        ln -sf ../local/bin/calc calc
         cd ../../..
         
-        # 创建 init 脚本（修改后的启动画面）
+        # 创建 init 脚本
         cat > rootfs/init << 'EOF'
         #!/bin/busybox sh
         /bin/busybox --install -s
@@ -268,11 +300,12 @@ jobs:
         # 获取内存大小（MB）
         MEM_SIZE=$(grep MemTotal /proc/meminfo | awk '{print int($2/1024)}')
         
-        # 显示启动画面（修改为指定格式）
+        # 显示启动画面
         echo "====================="
         echo "GudaoUI linux V1"
         echo "====================="
         echo "Enter 'about' to query system information"
+        echo "Enter 'calc' for calculator"
         echo "Running memory size: ${MEM_SIZE}MB"
         echo ""
         
@@ -319,11 +352,11 @@ jobs:
         }
         EOF
         
-        # 使用动态生成的ISO名称
-        grub-mkrescue -o "${{ env.ISO_NAME }}" iso/
+        # 使用动态生成的ISO名称 - 修复：在run脚本中直接使用环境变量$ISO_NAME
+        grub-mkrescue -o "$ISO_NAME" iso/
         
-        echo "✅ ISO 创建完成: ${{ env.ISO_NAME }}"
-        echo "ISO 大小: $(du -h ${{ env.ISO_NAME }} | cut -f1)"
+        echo "✅ ISO 创建完成: $ISO_NAME"
+        echo "ISO 大小: $(du -h $ISO_NAME | cut -f1)"
 
     # ===== 上传 ISO 到 Artifacts（备份）=====
     - name: Upload ISO to Artifacts
@@ -353,12 +386,17 @@ jobs:
           - BusyBox 1.36.1 (静态编译)
           - 最小 rootfs 文件系统
           - **about 命令** - 显示系统信息
+          - **calc 命令** - 简单计算器
           
           ### 💻 使用说明
           1. 下载 ISO 文件
           2. 在虚拟机软件中加载 ISO
           3. 启动后会自动显示系统信息
           4. 输入 `about` 命令查看更多信息
+          5. 输入 `calc` 命令进行计算，例如：
+             - `calc 1+1`
+             - `calc (2*2)+2`
+             - `calc 10/3`
           
           ### ⚡ 启动画面
           '''
@@ -366,6 +404,7 @@ jobs:
           GudaoUI linux V1
           =====================
           Enter 'about' to query system information
+          Enter 'calc' for calculator
           Running memory size: XXXMB
           '''
           
@@ -407,6 +446,7 @@ jobs:
         echo "GudaoUI linux V1" >> $GITHUB_STEP_SUMMARY
         echo "=====================" >> $GITHUB_STEP_SUMMARY
         echo "Enter 'about' to query system information" >> $GITHUB_STEP_SUMMARY
+        echo "Enter 'calc' for calculator" >> $GITHUB_STEP_SUMMARY
         echo "Running memory size: [动态获取]MB" >> $GITHUB_STEP_SUMMARY
         echo '```' >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
@@ -417,6 +457,14 @@ jobs:
         echo "  GudaoUI linux V1" >> $GITHUB_STEP_SUMMARY
         echo "  myweb: gudaoweb.pages.dev" >> $GITHUB_STEP_SUMMARY
         echo "  linux: \$(uname -r)" >> $GITHUB_STEP_SUMMARY
+        echo "  \`\`\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "- **calc命令**: 已添加，简单计算器" >> $GITHUB_STEP_SUMMARY
+        echo "  \`\`\`" >> $GITHUB_STEP_SUMMARY
+        echo "  Usage: calc <expression>" >> $GITHUB_STEP_SUMMARY
+        echo "  Example: calc 1+1 -> 2" >> $GITHUB_STEP_SUMMARY
+        echo "  Example: calc (2*2)+2 -> 6" >> $GITHUB_STEP_SUMMARY
+        echo "  Example: calc 10/3 -> 3.33" >> $GITHUB_STEP_SUMMARY
         echo "  \`\`\`" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         
