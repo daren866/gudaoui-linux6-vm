@@ -149,6 +149,15 @@ jobs:
         scripts/config --disable USB_SUPPORT
         scripts/config --disable WLAN
         
+        # 启用电源管理相关选项（修复reboot/poweroff）
+        scripts/config --enable POWER_SUPPLY
+        scripts/config --enable SUSPEND
+        scripts/config --enable HIBERNATION
+        scripts/config --enable ACPI
+        scripts/config --enable ACPI_BUTTON
+        scripts/config --enable ACPI_POWER_METER
+        scripts/config --enable ACPI_PROC_EVENT
+        
         make olddefconfig
 
     - name: Build kernel
@@ -191,18 +200,24 @@ jobs:
         # 静态编译
         sed -i 's/# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
         
-        # 启用自定义脚本支持（用于about和calc命令）
+        # 启用自定义脚本支持
         sed -i 's/# CONFIG_ASH is not set/CONFIG_ASH=y/' .config
         sed -i 's/# CONFIG_SH is not set/CONFIG_SH=y/' .config
         sed -i 's/# CONFIG_ASH_MATH_SUPPORT is not set/CONFIG_ASH_MATH_SUPPORT=y/' .config
         sed -i 's/# CONFIG_ASH_MATH_SUPPORT_64 is not set/CONFIG_ASH_MATH_SUPPORT_64=y/' .config
         
-        # 禁用 TC（解决内核6.8+兼容性问题）
+        # 启用电源管理命令（修复reboot/poweroff）
+        sed -i 's/# CONFIG_REBOOT is not set/CONFIG_REBOOT=y/' .config
+        sed -i 's/# CONFIG_HALT is not set/CONFIG_HALT=y/' .config
+        sed -i 's/# CONFIG_POWEROFF is not set/CONFIG_POWEROFF=y/' .config
+        
+        # 禁用 TC
         sed -i 's/CONFIG_TC=y/# CONFIG_TC is not set/' .config 2>/dev/null || true
         
         # 启用实用功能
         sed -i 's/# CONFIG_FEATURE_PS_LONG is not set/CONFIG_FEATURE_PS_LONG=y/' .config
         sed -i 's/# CONFIG_FEATURE_TOP_CPU_USAGE_PERCENTAGE is not set/CONFIG_FEATURE_TOP_CPU_USAGE_PERCENTAGE=y/' .config
+        sed -i 's/# CONFIG_FEATURE_SHUTDOWN_LOGIN is not set/CONFIG_FEATURE_SHUTDOWN_LOGIN=y/' .config
         
         make oldconfig
 
@@ -235,6 +250,10 @@ jobs:
         # 创建设备节点
         sudo mknod -m 666 rootfs/dev/null c 1 3
         sudo mknod -m 644 rootfs/dev/console c 5 1
+        sudo mknod -m 660 rootfs/dev/tty1 c 4 1
+        sudo mknod -m 660 rootfs/dev/tty2 c 4 2
+        sudo mknod -m 660 rootfs/dev/tty3 c 4 3
+        sudo mknod -m 660 rootfs/dev/tty4 c 4 4
         
         # 创建 about 命令脚本
         cat > rootfs/usr/local/bin/about << 'EOF'
@@ -248,7 +267,7 @@ jobs:
         
         chmod +x rootfs/usr/local/bin/about
         
-        # 创建 calc 命令脚本 - 简单的计算器
+        # 创建 calc 命令脚本
         cat > rootfs/usr/local/bin/calc << 'EOF'
         #!/bin/sh
         # calc command - simple calculator
@@ -260,45 +279,79 @@ jobs:
             exit 1
         fi
         
-        # 将参数合并为一个字符串
         expression="$*"
-        
-        # 使用 awk 进行计算（支持浮点数）
         result=$(awk "BEGIN {print $expression}")
         
-        # 检查结果是否为整数
         if [ "$result" = "${result%.*}" ]; then
             echo "$result"
         else
-            # 如果是小数，保留两位
             printf "%.2f\n" "$result"
         fi
         EOF
         
         chmod +x rootfs/usr/local/bin/calc
         
-        # 创建符号链接到 PATH
+        # 创建 reboot/poweroff 的包装脚本（确保它们正常工作）
+        cat > rootfs/usr/local/bin/reboot << 'EOF'
+        #!/bin/sh
+        # reboot command wrapper
+        echo "System is rebooting..."
+        /bin/busybox reboot -f
+        EOF
+        
+        chmod +x rootfs/usr/local/bin/reboot
+        
+        cat > rootfs/usr/local/bin/poweroff << 'EOF'
+        #!/bin/sh
+        # poweroff command wrapper
+        echo "System is powering off..."
+        /bin/busybox poweroff -f
+        EOF
+        
+        chmod +x rootfs/usr/local/bin/poweroff
+        
+        # 创建符号链接
         cd rootfs/usr/bin
         ln -sf ../local/bin/about about
         ln -sf ../local/bin/calc calc
+        ln -sf ../local/bin/reboot reboot
+        ln -sf ../local/bin/poweroff poweroff
         cd ../../..
         
-        # 创建 init 脚本
+        # 创建 init 脚本（修复版）
         cat > rootfs/init << 'EOF'
         #!/bin/busybox sh
         /bin/busybox --install -s
         
-        # 设置 PATH 包含自定义命令目录
+        # 设置 PATH
         export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin
         
         # 挂载文件系统
         mount -t proc none /proc
         mount -t sysfs none /sys
         mount -t devtmpfs none /dev
+        mount -t tmpfs tmpfs /tmp
+        
+        # 创建必要的设备节点（如果devtmpfs没有自动创建）
+        mknod -m 660 /dev/tty1 c 4 1 2>/dev/null || true
+        mknod -m 660 /dev/tty2 c 4 2 2>/dev/null || true
+        mknod -m 660 /dev/tty3 c 4 3 2>/dev/null || true
+        mknod -m 660 /dev/tty4 c 4 4 2>/dev/null || true
+        
+        # 设置主机名
+        echo "gudao-ui" > /proc/sys/kernel/hostname
+        
+        # 配置loopback网络
         ip link set lo up
         
-        # 获取内存大小（MB）
+        # 设置Ctrl-Alt-Del 为重启
+        trap "reboot" 2
+        
+        # 获取内存大小
         MEM_SIZE=$(grep MemTotal /proc/meminfo | awk '{print int($2/1024)}')
+        
+        # 清屏
+        clear
         
         # 显示启动画面
         echo "====================="
@@ -306,6 +359,8 @@ jobs:
         echo "====================="
         echo "Enter 'about' to query system information"
         echo "Enter 'calc' for calculator"
+        echo "Enter 'reboot' to restart"
+        echo "Enter 'poweroff' to shut down"
         echo "Running memory size: ${MEM_SIZE}MB"
         echo ""
         
@@ -315,10 +370,29 @@ jobs:
         
         chmod +x rootfs/init
         
+        # 创建 inittab 文件（可选，但有助于管理init）
+        cat > rootfs/etc/inittab << 'EOF'
+        ::sysinit:/bin/mount -t proc proc /proc
+        ::sysinit:/bin/mount -t sysfs sysfs /sys
+        ::sysinit:/bin/mount -t devtmpfs devtmpfs /dev
+        ::sysinit:/bin/ip link set lo up
+        ::ctrlaltdel:/sbin/reboot
+        ::shutdown:/sbin/swapoff -a
+        ::shutdown:/bin/umount -a -r
+        EOF
+        
         # 创建基本配置文件
         echo "root:x:0:0:root:/root:/bin/sh" > rootfs/etc/passwd
         echo "root:x:0:" > rootfs/etc/group
         echo "nameserver 8.8.8.8" > rootfs/etc/resolv.conf
+        
+        # 创建fstab文件
+        cat > rootfs/etc/fstab << 'EOF'
+        proc            /proc           proc    defaults    0 0
+        sysfs           /sys            sysfs   defaults    0 0
+        devtmpfs        /dev            devtmpfs defaults  0 0
+        tmpfs           /tmp            tmpfs   defaults    0 0
+        EOF
         
         # 打包 rootfs
         cd rootfs
@@ -342,23 +416,23 @@ jobs:
         set timeout=3
         
         menuentry "GudaoUI Linux V1" {
-          linux /boot/vmlinuz quiet
+          linux /boot/vmlinuz quiet console=tty0 console=ttyS0
           initrd /boot/initramfs.cpio
         }
         
         menuentry "GudaoUI Linux V1 (Debug)" {
-          linux /boot/vmlinuz loglevel=7
+          linux /boot/vmlinuz loglevel=7 console=tty0 console=ttyS0
           initrd /boot/initramfs.cpio
         }
         EOF
         
-        # 使用动态生成的ISO名称 - 修复：在run脚本中直接使用环境变量$ISO_NAME
+        # 使用动态生成的ISO名称
         grub-mkrescue -o "$ISO_NAME" iso/
         
         echo "✅ ISO 创建完成: $ISO_NAME"
         echo "ISO 大小: $(du -h $ISO_NAME | cut -f1)"
 
-    # ===== 上传 ISO 到 Artifacts（备份）=====
+    # ===== 上传 ISO 到 Artifacts =====
     - name: Upload ISO to Artifacts
       uses: actions/upload-artifact@v4
       with:
@@ -387,16 +461,17 @@ jobs:
           - 最小 rootfs 文件系统
           - **about 命令** - 显示系统信息
           - **calc 命令** - 简单计算器
+          - **修复 reboot/poweroff 命令**
           
           ### 💻 使用说明
           1. 下载 ISO 文件
           2. 在虚拟机软件中加载 ISO
           3. 启动后会自动显示系统信息
-          4. 输入 `about` 命令查看更多信息
-          5. 输入 `calc` 命令进行计算，例如：
-             - `calc 1+1`
-             - `calc (2*2)+2`
-             - `calc 10/3`
+          4. 可用命令：
+             - `about` - 显示系统信息
+             - `calc` - 计算器 (如: calc 1+1)
+             - `reboot` - 重启系统
+             - `poweroff` - 关闭系统
           
           ### ⚡ 启动画面
           '''
@@ -405,11 +480,13 @@ jobs:
           =====================
           Enter 'about' to query system information
           Enter 'calc' for calculator
+          Enter 'reboot' to restart
+          Enter 'poweroff' to shut down
           Running memory size: XXXMB
           '''
           
           ### ⚡ 虚拟机优化
-          已启用 VirtIO 驱动，适用于主流虚拟化平台：
+          已启用 VirtIO 驱动和ACPI电源管理，适用于主流虚拟化平台：
           - VMware
           - VirtualBox
           - KVM/QEMU
@@ -447,31 +524,15 @@ jobs:
         echo "=====================" >> $GITHUB_STEP_SUMMARY
         echo "Enter 'about' to query system information" >> $GITHUB_STEP_SUMMARY
         echo "Enter 'calc' for calculator" >> $GITHUB_STEP_SUMMARY
+        echo "Enter 'reboot' to restart" >> $GITHUB_STEP_SUMMARY
+        echo "Enter 'poweroff' to shut down" >> $GITHUB_STEP_SUMMARY
         echo "Running memory size: [动态获取]MB" >> $GITHUB_STEP_SUMMARY
         echo '```' >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         
-        echo "### 新增功能" >> $GITHUB_STEP_SUMMARY
-        echo "- **about命令**: 已添加，显示系统信息" >> $GITHUB_STEP_SUMMARY
-        echo "  \`\`\`" >> $GITHUB_STEP_SUMMARY
-        echo "  GudaoUI linux V1" >> $GITHUB_STEP_SUMMARY
-        echo "  myweb: gudaoweb.pages.dev" >> $GITHUB_STEP_SUMMARY
-        echo "  linux: \$(uname -r)" >> $GITHUB_STEP_SUMMARY
-        echo "  \`\`\`" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "- **calc命令**: 已添加，简单计算器" >> $GITHUB_STEP_SUMMARY
-        echo "  \`\`\`" >> $GITHUB_STEP_SUMMARY
-        echo "  Usage: calc <expression>" >> $GITHUB_STEP_SUMMARY
-        echo "  Example: calc 1+1 -> 2" >> $GITHUB_STEP_SUMMARY
-        echo "  Example: calc (2*2)+2 -> 6" >> $GITHUB_STEP_SUMMARY
-        echo "  Example: calc 10/3 -> 3.33" >> $GITHUB_STEP_SUMMARY
-        echo "  \`\`\`" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        
-        echo "### 缓存信息" >> $GITHUB_STEP_SUMMARY
-        echo "- **内核缓存Key**: \`kernel-6.18-${{ hashFiles('6.18.x-x86_64-build.conf') }}\`" >> $GITHUB_STEP_SUMMARY
-        echo "- **内核缓存命中**: ${{ steps.kernel-cache.outputs.cache-hit }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **BusyBox缓存命中**: ${{ steps.busybox-cache.outputs.cache-hit }}" >> $GITHUB_STEP_SUMMARY
+        echo "### 修复功能" >> $GITHUB_STEP_SUMMARY
+        echo "- **reboot命令**: 已修复，现在可以正常重启系统" >> $GITHUB_STEP_SUMMARY
+        echo "- **poweroff命令**: 已修复，现在可以正常关闭系统" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         
         echo "### 输出文件" >> $GITHUB_STEP_SUMMARY
