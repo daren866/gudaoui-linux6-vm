@@ -1,63 +1,433 @@
-  
-### ⚡ 虚拟机优化
-已启用 VirtIO 驱动，适用于主流虚拟化平台：
-- VMware
-- VirtualBox
-- KVM/QEMU
-- Hyper-V
-  
-### 📊 构建统计
-- **缓存命中**: 内核:${{ steps.kernel-cache.outputs.cache-hit }}, BusyBox:${{ steps.busybox-cache.outputs.cache-hit }}
-- **ISO大小**: $(du -h ${{ env.ISO_NAME }} | cut -f1)
-files: |
-${{ env.ISO_NAME }}
-draft: false
-prerelease: false
-generate_release_notes: false
-env:
-GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+name: Build Linux Kernel 6.18 with BusyBox
 
-# ===== 显示构建信息 =====
-- name: Build summary
-if: always()
-run: |
-echo "## 📊 构建完成报告" >> $GITHUB_STEP_SUMMARY
-echo "" >> $GITHUB_STEP_SUMMARY
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
 
-echo "### Release信息" >> $GITHUB_STEP_SUMMARY
-echo "- **Release标题**: ${{ steps.set-release-info.outputs.release_title }}" >> $GITHUB_STEP_SUMMARY
-echo "- **Release标签**: ${{ steps.set-release-info.outputs.release_tag }}" >> $GITHUB_STEP_SUMMARY
-echo "- **ISO文件**: ${{ env.ISO_NAME }}" >> $GITHUB_STEP_SUMMARY
-echo "- **Unix时间戳**: ${{ steps.set-release-info.outputs.release_number }}" >> $GITHUB_STEP_SUMMARY
-echo "" >> $GITHUB_STEP_SUMMARY
+# 添加必要的权限
+permissions:
+  contents: write
+  actions: read
 
-echo "### 启动画面" >> $GITHUB_STEP_SUMMARY
-echo '```' >> $GITHUB_STEP_SUMMARY
-echo "=====================" >> $GITHUB_STEP_SUMMARY
-echo "GudaoUI linux V1" >> $GITHUB_STEP_SUMMARY
-echo "=====================" >> $GITHUB_STEP_SUMMARY
-echo "Enter 'about' to query system information" >> $GITHUB_STEP_SUMMARY
-echo "Running memory size: [动态获取]MB" >> $GITHUB_STEP_SUMMARY
-echo '```' >> $GITHUB_STEP_SUMMARY
-echo "" >> $GITHUB_STEP_SUMMARY
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    outputs:
+      release_title: ${{ steps.set-release-info.outputs.release_title }}
+      release_tag: ${{ steps.set-release-info.outputs.release_tag }}
+      iso_path: ${{ steps.set-release-info.outputs.iso_path }}
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-echo "### 新增功能" >> $GITHUB_STEP_SUMMARY
-echo "- **about命令**: 已添加，显示系统信息" >> $GITHUB_STEP_SUMMARY
-echo "  \`\`\`" >> $GITHUB_STEP_SUMMARY
-echo "  GudaoUI linux V1" >> $GITHUB_STEP_SUMMARY
-echo "  myweb: gudaoweb.pages.dev" >> $GITHUB_STEP_SUMMARY
-echo "  linux: \$(uname -r)" >> $GITHUB_STEP_SUMMARY
-echo "  \`\`\`" >> $GITHUB_STEP_SUMMARY
-echo "" >> $GITHUB_STEP_SUMMARY
+    # ===== 设置Release信息 =====
+    - name: Set release info
+      id: set-release-info
+      run: |
+        # 获取Unix时间戳
+        UNIX_TIMESTAMP=$(date +%s)
+        echo "Unix时间戳: $UNIX_TIMESTAMP"
+        
+        # 计算乘以9178666后的数字
+        RELEASE_NUMBER=$((UNIX_TIMESTAMP * 9178666))
+        echo "Release数字: $RELEASE_NUMBER"
+        
+        # 生成Release标题
+        RELEASE_TITLE="Linux6 虚拟机版-${RELEASE_NUMBER}"
+        echo "Release标题: $RELEASE_TITLE"
+        
+        # 生成ISO文件名
+        ISO_NAME="linux6-vm-${UNIX_TIMESTAMP}.iso"
+        
+        # 设置输出变量
+        echo "release_title=$RELEASE_TITLE" >> $GITHUB_OUTPUT
+        echo "release_tag=linux6-vm-${UNIX_TIMESTAMP}" >> $GITHUB_OUTPUT
+        echo "iso_name=$ISO_NAME" >> $GITHUB_OUTPUT
+        echo "release_number=$RELEASE_NUMBER" >> $GITHUB_OUTPUT
+        
+        # 保存到环境变量
+        echo "RELEASE_TITLE=$RELEASE_TITLE" >> $GITHUB_ENV
+        echo "ISO_NAME=$ISO_NAME" >> $GITHUB_ENV
 
-echo "### 缓存信息" >> $GITHUB_STEP_SUMMARY
-echo "- **内核缓存Key**: \`kernel-6.18-${{ hashFiles('6.18.x-x86_64-build.conf') }}\`" >> $GITHUB_STEP_SUMMARY
-echo "- **内核缓存命中**: ${{ steps.kernel-cache.outputs.cache-hit }}" >> $GITHUB_STEP_SUMMARY
-echo "- **BusyBox缓存命中**: ${{ steps.busybox-cache.outputs.cache-hit }}" >> $GITHUB_STEP_SUMMARY
-echo "" >> $GITHUB_STEP_SUMMARY
+    # ===== 🚀 内核缓存 =====
+    - name: Cache kernel build
+      uses: actions/cache@v4
+      id: kernel-cache
+      with:
+        path: linux-6.18
+        key: kernel-6.18-${{ hashFiles('6.18.x-x86_64-build.conf') }}
+        restore-keys: |
+          kernel-6.18-
 
-echo "### 输出文件" >> $GITHUB_STEP_SUMMARY
-echo "- **内核文件**: $(du -h linux-6.18/arch/x86/boot/bzImage | cut -f1)" >> $GITHUB_STEP_SUMMARY
-echo "- **BusyBox**: $(du -h busybox-1.36.1/busybox | cut -f1)" >> $GITHUB_STEP_SUMMARY
-echo "- **rootfs.cpio**: $(du -h rootfs.cpio | cut -f1)" >> $GITHUB_STEP_SUMMARY
-echo "- **ISO文件**: $(du -h ${{ env.ISO_NAME }} | cut -f1)" >> $GITHUB_STEP_SUMMARY
+    # ===== BusyBox缓存 =====
+    - name: Cache busybox build
+      uses: actions/cache@v4
+      id: busybox-cache
+      with:
+        path: busybox-1.36.1
+        key: busybox-1.36.1-${{ hashFiles('busybox-config.conf') }}
+        restore-keys: |
+          busybox-1.36.1-
+
+    - name: Check cache status
+      run: |
+        echo "## 🔍 缓存状态" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "### 内核缓存" >> $GITHUB_STEP_SUMMARY
+        if [[ "${{ steps.kernel-cache.outputs.cache-hit }}" == "true" ]]; then
+          echo "✅ **内核缓存命中！**" >> $GITHUB_STEP_SUMMARY
+          echo "缓存Key: \`${{ steps.kernel-cache.outputs.primary-key }}\`" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ 内核缓存未命中" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### BusyBox缓存" >> $GITHUB_STEP_SUMMARY
+        if [[ "${{ steps.busybox-cache.outputs.cache-hit }}" == "true" ]]; then
+          echo "✅ **BusyBox缓存命中！**" >> $GITHUB_STEP_SUMMARY
+          echo "缓存Key: \`${{ steps.busybox-cache.outputs.primary-key }}\`" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ BusyBox缓存未命中" >> $GITHUB_STEP_SUMMARY
+        fi
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          libncurses-dev \
+          bison \
+          flex \
+          libssl-dev \
+          libelf-dev \
+          bc \
+          wget \
+          cpio \
+          xorriso \
+          grub-pc-bin \
+          grub-common \
+          mtools \
+          dosfstools
+
+    # ===== 内核部分 =====
+    - name: Download kernel source
+      if: steps.kernel-cache.outputs.cache-hit != 'true'
+      run: |
+        echo "📥 下载内核源码 linux-6.18..."
+        wget -q https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.tar.xz
+        tar -xf linux-6.18.tar.xz
+        echo "✅ 内核源码下载完成"
+
+    - name: Configure kernel
+      run: |
+        cd linux-6.18
+        
+        # 下载配置文件
+        echo "📝 配置内核..."
+        wget -q -O .config.original https://raw.githubusercontent.com/puppylinux-woof-CE/woof-CE/testing/kernel-kit/configs_x86_64/DOTconfig-6.18.1-x86_64 || true
+        
+        if [ -f .config.original ]; then
+          cp .config.original .config
+        else
+          make defconfig
+        fi
+        
+        # 应用 VM 优化
+        echo "🔧 应用虚拟机优化..."
+        scripts/config --enable VIRTIO
+        scripts/config --enable VIRTIO_PCI
+        scripts/config --enable VIRTIO_BLK
+        scripts/config --enable VIRTIO_NET
+        scripts/config --enable VMXNET3
+        scripts/config --enable E1000
+        scripts/config --enable DRM_VMWGFX
+        scripts/config --disable SOUND
+        scripts/config --disable USB_SUPPORT
+        scripts/config --disable WLAN
+        
+        make olddefconfig
+
+    - name: Build kernel
+      run: |
+        cd linux-6.18
+        
+        if [ -f "arch/x86/boot/bzImage" ] && [ "${{ steps.kernel-cache.outputs.cache-hit }}" == "true" ]; then
+          echo "✅ 使用缓存的内核，跳过编译"
+        else
+          echo "🔨 编译内核中（这需要约30分钟）..."
+          start_time=$(date +%s)
+          
+          make -j$(nproc) bzImage
+          make -j$(nproc) modules
+          
+          end_time=$(date +%s)
+          duration=$((end_time - start_time))
+          echo "✅ 内核编译完成，耗时: $((duration / 60)) 分钟"
+        fi
+        
+        echo "内核位置: $(pwd)/arch/x86/boot/bzImage"
+        ls -lh arch/x86/boot/bzImage
+
+    # ===== BusyBox 部分 =====
+    - name: Download BusyBox
+      if: steps.busybox-cache.outputs.cache-hit != 'true'
+      run: |
+        echo "📥 下载 BusyBox 1.36.1..."
+        wget -q https://busybox.net/downloads/busybox-1.36.1.tar.bz2
+        tar -xf busybox-1.36.1.tar.bz2
+        echo "✅ BusyBox 下载完成"
+
+    - name: Configure BusyBox
+      run: |
+        cd busybox-1.36.1
+        
+        echo "🔧 配置 BusyBox..."
+        make defconfig
+        
+        # 静态编译
+        sed -i 's/# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
+        
+        # 启用自定义脚本支持（用于about命令）
+        sed -i 's/# CONFIG_ASH is not set/CONFIG_ASH=y/' .config
+        sed -i 's/# CONFIG_SH is not set/CONFIG_SH=y/' .config
+        
+        # 禁用 TC（解决内核6.8+兼容性问题）
+        sed -i 's/CONFIG_TC=y/# CONFIG_TC is not set/' .config 2>/dev/null || true
+        
+        # 启用实用功能
+        sed -i 's/# CONFIG_FEATURE_PS_LONG is not set/CONFIG_FEATURE_PS_LONG=y/' .config
+        sed -i 's/# CONFIG_FEATURE_TOP_CPU_USAGE_PERCENTAGE is not set/CONFIG_FEATURE_TOP_CPU_USAGE_PERCENTAGE=y/' .config
+        
+        make oldconfig
+
+    - name: Build BusyBox
+      run: |
+        cd busybox-1.36.1
+        
+        if [ -f "busybox" ] && [ "${{ steps.busybox-cache.outputs.cache-hit }}" == "true" ]; then
+          echo "✅ 使用缓存的 BusyBox，跳过编译"
+        else
+          echo "🔨 编译 BusyBox 中..."
+          make -j$(nproc)
+          make install
+          echo "✅ BusyBox 编译完成"
+        fi
+        
+        ls -lh busybox
+
+    # ===== 创建 rootfs =====
+    - name: Create rootfs
+      run: |
+        echo "📦 创建 rootfs..."
+        
+        # 创建目录结构
+        mkdir -p rootfs/{bin,sbin,usr/bin,usr/sbin,etc,proc,sys,dev,lib,lib64,tmp,var,run,root,usr/local/bin}
+        
+        # 复制 BusyBox
+        cp -a busybox-1.36.1/_install/* rootfs/
+        
+        # 创建设备节点
+        sudo mknod -m 666 rootfs/dev/null c 1 3
+        sudo mknod -m 644 rootfs/dev/console c 5 1
+        
+        # 创建 about 命令脚本
+        cat > rootfs/usr/local/bin/about << 'EOF'
+        #!/bin/sh
+        # about command - display system information
+        
+        echo "GudaoUI linux V1"
+        echo "myweb: gudaoweb.pages.dev"
+        echo "linux: $(uname -r)"
+        EOF
+        
+        chmod +x rootfs/usr/local/bin/about
+        
+        # 创建符号链接到 PATH
+        cd rootfs/usr/bin
+        ln -sf ../local/bin/about about
+        cd ../../..
+        
+        # 创建 init 脚本（修改后的启动画面）
+        cat > rootfs/init << 'EOF'
+        #!/bin/busybox sh
+        /bin/busybox --install -s
+        
+        # 设置 PATH 包含自定义命令目录
+        export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin
+        
+        # 挂载文件系统
+        mount -t proc none /proc
+        mount -t sysfs none /sys
+        mount -t devtmpfs none /dev
+        ip link set lo up
+        
+        # 获取内存大小（MB）
+        MEM_SIZE=$(grep MemTotal /proc/meminfo | awk '{print int($2/1024)}')
+        
+        # 显示启动画面（修改为指定格式）
+        echo "====================="
+        echo "GudaoUI linux V1"
+        echo "====================="
+        echo "Enter 'about' to query system information"
+        echo "Running memory size: ${MEM_SIZE}MB"
+        echo ""
+        
+        # 进入交互式 Shell
+        exec /bin/sh
+        EOF
+        
+        chmod +x rootfs/init
+        
+        # 创建基本配置文件
+        echo "root:x:0:0:root:/root:/bin/sh" > rootfs/etc/passwd
+        echo "root:x:0:" > rootfs/etc/group
+        echo "nameserver 8.8.8.8" > rootfs/etc/resolv.conf
+        
+        # 打包 rootfs
+        cd rootfs
+        find . | cpio -o -H newc > ../rootfs.cpio
+        cd ..
+        
+        echo "rootfs.cpio 大小: $(du -h rootfs.cpio | cut -f1)"
+
+    # ===== 创建 ISO =====
+    - name: Create bootable ISO
+      run: |
+        echo "💿 创建启动 ISO..."
+        
+        mkdir -p iso/boot/grub
+        
+        cp linux-6.18/arch/x86/boot/bzImage iso/boot/vmlinuz
+        cp rootfs.cpio iso/boot/initramfs.cpio
+        
+        cat > iso/boot/grub/grub.cfg << EOF
+        set default=0
+        set timeout=3
+        
+        menuentry "GudaoUI Linux V1" {
+          linux /boot/vmlinuz quiet
+          initrd /boot/initramfs.cpio
+        }
+        
+        menuentry "GudaoUI Linux V1 (Debug)" {
+          linux /boot/vmlinuz loglevel=7
+          initrd /boot/initramfs.cpio
+        }
+        EOF
+        
+        # 使用动态生成的ISO名称
+        grub-mkrescue -o "${{ env.ISO_NAME }}" iso/
+        
+        echo "✅ ISO 创建完成: ${{ env.ISO_NAME }}"
+        echo "ISO 大小: $(du -h ${{ env.ISO_NAME }} | cut -f1)"
+
+    # ===== 上传 ISO 到 Artifacts（备份）=====
+    - name: Upload ISO to Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.set-release-info.outputs.iso_name }}
+        path: ${{ steps.set-release-info.outputs.iso_name }}
+        retention-days: 30
+
+    # ===== 创建 GitHub Release =====
+    - name: Create Release
+      id: create_release
+      uses: softprops/action-gh-release@v1
+      with:
+        name: ${{ steps.set-release-info.outputs.release_title }}
+        tag_name: ${{ steps.set-release-info.outputs.release_tag }}
+        body: |
+          ## 🎉 GudaoUI Linux V1 发布
+          
+          ### 📦 构建信息
+          - **构建时间**: $(date '+%Y-%m-%d %H:%M:%S')
+          - **Unix时间戳**: ${{ steps.set-release-info.outputs.release_number }}
+          - **Release数字**: ${{ steps.set-release-info.outputs.release_number }}
+          
+          ### 🔧 包含组件
+          - Linux 内核 6.18 (虚拟机优化版)
+          - BusyBox 1.36.1 (静态编译)
+          - 最小 rootfs 文件系统
+          - **about 命令** - 显示系统信息
+          
+          ### 💻 使用说明
+          1. 下载 ISO 文件
+          2. 在虚拟机软件中加载 ISO
+          3. 启动后会自动显示系统信息
+          4. 输入 `about` 命令查看更多信息
+          
+          ### ⚡ 启动画面
+          '''
+          =====================
+          GudaoUI linux V1
+          =====================
+          Enter 'about' to query system information
+          Running memory size: XXXMB
+          '''
+          
+          ### ⚡ 虚拟机优化
+          已启用 VirtIO 驱动，适用于主流虚拟化平台：
+          - VMware
+          - VirtualBox
+          - KVM/QEMU
+          - Hyper-V
+          
+          ### 📊 构建统计
+          - 缓存命中: 内核: ${{ steps.kernel-cache.outputs.cache-hit }}, BusyBox: ${{ steps.busybox-cache.outputs.cache-hit }}
+          - ISO大小: $(du -h ${{ steps.set-release-info.outputs.iso_name }} | cut -f1)
+        files: |
+          ${{ steps.set-release-info.outputs.iso_name }}
+        draft: false
+        prerelease: false
+        generate_release_notes: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    # ===== 显示构建信息 =====
+    - name: Build summary
+      if: always()
+      run: |
+        echo "## 📊 构建完成报告" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "### Release信息" >> $GITHUB_STEP_SUMMARY
+        echo "- **Release标题**: ${{ steps.set-release-info.outputs.release_title }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Release标签**: ${{ steps.set-release-info.outputs.release_tag }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **ISO文件**: ${{ steps.set-release-info.outputs.iso_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Unix时间戳**: ${{ steps.set-release-info.outputs.release_number }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "### 启动画面" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        echo "=====================" >> $GITHUB_STEP_SUMMARY
+        echo "GudaoUI linux V1" >> $GITHUB_STEP_SUMMARY
+        echo "=====================" >> $GITHUB_STEP_SUMMARY
+        echo "Enter 'about' to query system information" >> $GITHUB_STEP_SUMMARY
+        echo "Running memory size: [动态获取]MB" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "### 新增功能" >> $GITHUB_STEP_SUMMARY
+        echo "- **about命令**: 已添加，显示系统信息" >> $GITHUB_STEP_SUMMARY
+        echo "  \`\`\`" >> $GITHUB_STEP_SUMMARY
+        echo "  GudaoUI linux V1" >> $GITHUB_STEP_SUMMARY
+        echo "  myweb: gudaoweb.pages.dev" >> $GITHUB_STEP_SUMMARY
+        echo "  linux: \$(uname -r)" >> $GITHUB_STEP_SUMMARY
+        echo "  \`\`\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "### 缓存信息" >> $GITHUB_STEP_SUMMARY
+        echo "- **内核缓存Key**: \`kernel-6.18-${{ hashFiles('6.18.x-x86_64-build.conf') }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **内核缓存命中**: ${{ steps.kernel-cache.outputs.cache-hit }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **BusyBox缓存命中**: ${{ steps.busybox-cache.outputs.cache-hit }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "### 输出文件" >> $GITHUB_STEP_SUMMARY
+        echo "- **内核文件**: $(du -h linux-6.18/arch/x86/boot/bzImage | cut -f1)" >> $GITHUB_STEP_SUMMARY
+        echo "- **BusyBox**: $(du -h busybox-1.36.1/busybox | cut -f1)" >> $GITHUB_STEP_SUMMARY
+        echo "- **rootfs.cpio**: $(du -h rootfs.cpio | cut -f1)" >> $GITHUB_STEP_SUMMARY
+        echo "- **ISO文件**: $(du -h ${{ steps.set-release-info.outputs.iso_name }} | cut -f1)" >> $GITHUB_STEP_SUMMARY
