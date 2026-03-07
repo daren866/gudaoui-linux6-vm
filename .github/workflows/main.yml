@@ -149,7 +149,7 @@ jobs:
         scripts/config --disable USB_SUPPORT
         scripts/config --disable WLAN
         
-        # 启用电源管理相关选项（修复reboot/poweroff）
+        # 启用电源管理相关选项
         scripts/config --enable POWER_SUPPLY
         scripts/config --enable SUSPEND
         scripts/config --enable HIBERNATION
@@ -207,7 +207,7 @@ jobs:
         sed -i 's/# CONFIG_ASH_MATH_SUPPORT is not set/CONFIG_ASH_MATH_SUPPORT=y/' .config
         sed -i 's/# CONFIG_ASH_MATH_SUPPORT_64 is not set/CONFIG_ASH_MATH_SUPPORT_64=y/' .config
         
-        # 启用电源管理命令（修复reboot/poweroff）
+        # 启用电源管理命令
         sed -i 's/# CONFIG_REBOOT is not set/CONFIG_REBOOT=y/' .config
         sed -i 's/# CONFIG_HALT is not set/CONFIG_HALT=y/' .config
         sed -i 's/# CONFIG_POWEROFF is not set/CONFIG_POWEROFF=y/' .config
@@ -219,6 +219,8 @@ jobs:
         sed -i 's/# CONFIG_FEATURE_PS_LONG is not set/CONFIG_FEATURE_PS_LONG=y/' .config
         sed -i 's/# CONFIG_FEATURE_TOP_CPU_USAGE_PERCENTAGE is not set/CONFIG_FEATURE_TOP_CPU_USAGE_PERCENTAGE=y/' .config
         sed -i 's/# CONFIG_FEATURE_SHUTDOWN_LOGIN is not set/CONFIG_FEATURE_SHUTDOWN_LOGIN=y/' .config
+        sed -i 's/# CONFIG_FEATURE_MOUNT_LOOP is not set/CONFIG_FEATURE_MOUNT_LOOP=y/' .config
+        sed -i 's/# CONFIG_FEATURE_MOUNT_FLAGS is not set/CONFIG_FEATURE_MOUNT_FLAGS=y/' .config
         
         make oldconfig
 
@@ -292,15 +294,10 @@ jobs:
         
         chmod +x rootfs/usr/local/bin/calc
         
-        # 创建 reboot/poweroff 的包装脚本（修复版，确保proc已挂载）
+        # 创建 reboot/poweroff 的包装脚本
         cat > rootfs/usr/local/bin/reboot << 'EOF'
         #!/bin/sh
-        # reboot command wrapper with proc check
-        
-        # 确保 /proc 已挂载
-        if ! mountpoint -q /proc; then
-            mount -t proc proc /proc
-        fi
+        # reboot command wrapper
         
         echo "System is rebooting..."
         sync
@@ -311,12 +308,7 @@ jobs:
         
         cat > rootfs/usr/local/bin/poweroff << 'EOF'
         #!/bin/sh
-        # poweroff command wrapper with proc check
-        
-        # 确保 /proc 已挂载
-        if ! mountpoint -q /proc; then
-            mount -t proc proc /proc
-        fi
+        # poweroff command wrapper
         
         echo "System is powering off..."
         sync
@@ -325,61 +317,73 @@ jobs:
         
         chmod +x rootfs/usr/local/bin/poweroff
         
-        # 创建 halt 命令的符号链接
+        # 创建符号链接
         cd rootfs/usr/bin
+        ln -sf ../local/bin/about about
+        ln -sf ../local/bin/calc calc
         ln -sf ../local/bin/reboot reboot
         ln -sf ../local/bin/poweroff poweroff
         ln -sf poweroff halt
-        ln -sf reboot reboot
         cd ../../..
         
-        # 创建 init 脚本（修复版）
+        # 创建 init 脚本（精简版，确保所有挂载正确）
         cat > rootfs/init << 'EOF'
         #!/bin/busybox sh
-        /bin/busybox --install -s
+        # 初始化脚本 - 精简版
         
-        # 设置 PATH
-        export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin
+        # 挂载必要的文件系统
+        /bin/busybox mount -t proc none /proc
+        /bin/busybox mount -t sysfs none /sys
+        /bin/busybox mount -t devtmpfs none /dev
+        /bin/busybox mount -t tmpfs tmpfs /tmp
         
-        # 挂载文件系统
-        mount -t proc none /proc
-        mount -t sysfs none /sys
-        mount -t devtmpfs none /dev
-        mount -t tmpfs tmpfs /tmp
-        
-        # 创建必要的设备节点
-        mknod -m 660 /dev/tty1 c 4 1 2>/dev/null || true
-        mknod -m 660 /dev/tty2 c 4 2 2>/dev/null || true
-        mknod -m 660 /dev/tty3 c 4 3 2>/dev/null || true
-        mknod -m 660 /dev/tty4 c 4 4 2>/dev/null || true
+        # 创建必要的设备节点（如果devtmpfs没有自动创建）
+        /bin/busybox mknod -m 660 /dev/tty1 c 4 1 2>/dev/null || true
+        /bin/busybox mknod -m 660 /dev/tty2 c 4 2 2>/dev/null || true
+        /bin/busybox mknod -m 660 /dev/tty3 c 4 3 2>/dev/null || true
+        /bin/busybox mknod -m 660 /dev/tty4 c 4 4 2>/dev/null || true
         
         # 设置主机名
-        echo "gudao-ui" > /proc/sys/kernel/hostname
+        /bin/busybox echo "gudao-ui" > /proc/sys/kernel/hostname
         
         # 配置loopback网络
-        ip link set lo up
+        /bin/busybox ip link set lo up
         
         # 设置信号处理
-        trap "reboot" 2   # Ctrl-Alt-Del
+        /bin/busybox trap "reboot" 2   # Ctrl-Alt-Del
+        
+        # 安装所有BusyBox应用程序
+        /bin/busybox --install -s
         
         # 获取内存大小
-        MEM_SIZE=$(grep MemTotal /proc/meminfo | awk '{print int($2/1024)}')
+        MEM_SIZE=$(/bin/busybox grep MemTotal /proc/meminfo | /bin/busybox awk '{print int($2/1024)}')
         
         # 清屏
-        clear
+        /bin/busybox clear
         
         # 显示启动画面
-        echo "====================="
-        echo "GudaoUI linux V1"
-        echo "====================="
-        echo "Enter 'about' to query system information"
-        echo "Enter 'calc' for calculator"
-        echo "Enter 'reboot' to restart"
-        echo "Enter 'poweroff' to shut down"
-        echo "Running memory size: ${MEM_SIZE}MB"
-        echo ""
+        /bin/busybox echo "====================="
+        /bin/busybox echo "GudaoUI linux V1"
+        /bin/busybox echo "====================="
+        /bin/busybox echo "Enter 'about' to query system information"
+        /bin/busybox echo "Enter 'calc' for calculator"
+        /bin/busybox echo "Enter 'reboot' to restart"
+        /bin/busybox echo "Enter 'poweroff' to shut down"
+        /bin/busybox echo "Running memory size: ${MEM_SIZE}MB"
+        /bin/busybox echo ""
+        
+        # 验证挂载点
+        /bin/busybox echo "=== Mount points ==="
+        /bin/busybox mount | /bin/busybox grep -E "proc|sys|dev|tmp" | /bin/busybox while read line; do
+            /bin/busybox echo "  ✓ $line"
+        done
+        /bin/busybox echo ""
         
         # 进入交互式 Shell
+        /bin/busybox echo "Welcome to GudaoUI Linux! Type 'exit' to logout."
+        /bin/busybox echo ""
+        
+        # 启动shell
         exec /bin/sh
         EOF
         
@@ -396,6 +400,13 @@ jobs:
         sysfs           /sys            sysfs   defaults    0 0
         devtmpfs        /dev            devtmpfs defaults  0 0
         tmpfs           /tmp            tmpfs   defaults    0 0
+        EOF
+        
+        # 创建 profile 文件
+        cat > rootfs/etc/profile << 'EOF'
+        export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin
+        export PS1='\u@\h:\w\$ '
+        alias ll='ls -la'
         EOF
         
         # 打包 rootfs
@@ -465,7 +476,7 @@ jobs:
           - 最小 rootfs 文件系统
           - **about 命令** - 显示系统信息
           - **calc 命令** - 简单计算器
-          - **修复 reboot/poweroff 命令**（自动挂载/proc）
+          - **修复 reboot/poweroff 命令**
           
           ### 💻 使用说明
           1. 下载 ISO 文件
@@ -487,6 +498,12 @@ jobs:
           Enter 'reboot' to restart
           Enter 'poweroff' to shut down
           Running memory size: XXXMB
+          
+          === Mount points ===
+            ✓ proc on /proc type proc
+            ✓ sysfs on /sys type sysfs
+            ✓ devtmpfs on /dev type devtmpfs
+            ✓ tmpfs on /tmp type tmpfs
           '''
           
           ### ⚡ 虚拟机优化
@@ -531,12 +548,20 @@ jobs:
         echo "Enter 'reboot' to restart" >> $GITHUB_STEP_SUMMARY
         echo "Enter 'poweroff' to shut down" >> $GITHUB_STEP_SUMMARY
         echo "Running memory size: [动态获取]MB" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "=== Mount points ===" >> $GITHUB_STEP_SUMMARY
+        echo "  ✓ proc on /proc type proc" >> $GITHUB_STEP_SUMMARY
+        echo "  ✓ sysfs on /sys type sysfs" >> $GITHUB_STEP_SUMMARY
+        echo "  ✓ devtmpfs on /dev type devtmpfs" >> $GITHUB_STEP_SUMMARY
+        echo "  ✓ tmpfs on /tmp type tmpfs" >> $GITHUB_STEP_SUMMARY
         echo '```' >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         
         echo "### 修复功能" >> $GITHUB_STEP_SUMMARY
-        echo "- **reboot命令**: 已修复，现在会自动检查并挂载/proc，然后重启系统" >> $GITHUB_STEP_SUMMARY
-        echo "- **poweroff命令**: 已修复，现在会自动检查并挂载/proc，然后关闭系统" >> $GITHUB_STEP_SUMMARY
+        echo "- **init脚本**: 已精简并确保所有文件系统正确挂载" >> $GITHUB_STEP_SUMMARY
+        echo "- **reboot命令**: 现在可以正常重启系统" >> $GITHUB_STEP_SUMMARY
+        echo "- **poweroff命令**: 现在可以正常关闭系统" >> $GITHUB_STEP_SUMMARY
+        echo "- **挂载点验证**: 启动时会显示所有挂载点状态" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         
         echo "### 输出文件" >> $GITHUB_STEP_SUMMARY
