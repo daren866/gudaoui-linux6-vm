@@ -1,3 +1,207 @@
+name: Build Linux Kernel 6.18 with BusyBox
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    outputs:
+      release_title: ${{ steps.set-release-info.outputs.release_title }}
+      release_tag: ${{ steps.set-release-info.outputs.release_tag }}
+      iso_path: ${{ steps.set-release-info.outputs.iso_path }}
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # ===== 设置 Release 信息 =====
+    - name: Set release info
+      id: set-release-info
+      run: |
+        UNIX_TIMESTAMP=$(date +%s)
+        echo "Unix 时间戳: $UNIX_TIMESTAMP"
+        RELEASE_NUMBER=$((UNIX_TIMESTAMP * 9178666))
+        echo "Release 数字: $RELEASE_NUMBER"
+        RELEASE_TITLE="Linux6 虚拟机版-${RELEASE_NUMBER}"
+        echo "Release 标题: $RELEASE_TITLE"
+        ISO_NAME="linux6-vm-${UNIX_TIMESTAMP}.iso"
+        echo "release_title=$RELEASE_TITLE" >> $GITHUB_OUTPUT
+        echo "release_tag=linux6-vm-${UNIX_TIMESTAMP}" >> $GITHUB_OUTPUT
+        echo "iso_name=$ISO_NAME" >> $GITHUB_OUTPUT
+        echo "release_number=$RELEASE_NUMBER" >> $GITHUB_OUTPUT
+        echo "RELEASE_TITLE=$RELEASE_TITLE" >> $GITHUB_ENV
+        echo "ISO_NAME=$ISO_NAME" >> $GITHUB_ENV
+
+    # ===== 内核缓存 =====
+    - name: Cache kernel build
+      uses: actions/cache@v4
+      id: kernel-cache
+      with:
+        path: linux-6.18
+        key: kernel-6.18-${{ hashFiles('6.18.x-x86_64-build.conf') }}
+        restore-keys: |
+          kernel-6.18-
+
+    # ===== BusyBox 缓存 =====
+    - name: Cache busybox build
+      uses: actions/cache@v4
+      id: busybox-cache
+      with:
+        path: busybox-1.36.1
+        key: busybox-1.36.1-${{ hashFiles('busybox-config.conf') }}
+        restore-keys: |
+          busybox-1.36.1-
+
+    - name: Check cache status
+      run: |
+        echo "## 🔍 缓存状态" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 内核缓存" >> $GITHUB_STEP_SUMMARY
+        if [[ "${{ steps.kernel-cache.outputs.cache-hit }}" == "true" ]]; then
+          echo "✅ **内核缓存命中！**" >> $GITHUB_STEP_SUMMARY
+          echo "缓存 Key: \`${{ steps.kernel-cache.outputs.primary-key }}\`" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ 内核缓存未命中" >> $GITHUB_STEP_SUMMARY
+        fi
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### BusyBox 缓存" >> $GITHUB_STEP_SUMMARY
+        if [[ "${{ steps.busybox-cache.outputs.cache-hit }}" == "true" ]]; then
+          echo "✅ **BusyBox 缓存命中！**" >> $GITHUB_STEP_SUMMARY
+          echo "缓存 Key: \`${{ steps.busybox-cache.outputs.primary-key }}\`" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ BusyBox 缓存未命中" >> $GITHUB_STEP_SUMMARY
+        fi
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          libncurses-dev \
+          bison \
+          flex \
+          libssl-dev \
+          libelf-dev \
+          bc \
+          wget \
+          cpio \
+          xorriso \
+          grub-pc-bin \
+          grub-common \
+          mtools \
+          dosfstools \
+          python3 \
+          python3-minimal \
+          libpython3-stdlib \
+          libpython3.12-minimal \
+          libpython3.12-stdlib
+
+    # ===== 内核部分 =====
+    - name: Download kernel source
+      if: steps.kernel-cache.outputs.cache-hit != 'true'
+      run: |
+        echo "📥 下载内核源码 linux-6.18..."
+        wget -q https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.tar.xz
+        tar -xf linux-6.18.tar.xz
+        echo "✅ 内核源码下载完成"
+
+    - name: Configure kernel
+      run: |
+        cd linux-6.18
+        echo "📝 配置内核..."
+        wget -q -O .config.original https://raw.githubusercontent.com/puppylinux-woof-CE/woof-CE/testing/kernel-kit/configs_x86_64/DOTconfig-6.18.1-x86_64 || true
+        if [ -f .config.original ]; then
+          cp .config.original .config
+        else
+          make defconfig
+        fi
+        echo "🔧 应用虚拟机优化..."
+        scripts/config --enable VIRTIO
+        scripts/config --enable VIRTIO_PCI
+        scripts/config --enable VIRTIO_BLK
+        scripts/config --enable VIRTIO_NET
+        scripts/config --enable VMXNET3
+        scripts/config --enable E1000
+        scripts/config --enable DRM_VMWGFX
+        scripts/config --disable SOUND
+        scripts/config --disable USB_SUPPORT
+        scripts/config --disable WLAN
+        scripts/config --enable POWER_SUPPLY
+        scripts/config --enable SUSPEND
+        scripts/config --enable HIBERNATION
+        scripts/config --enable ACPI
+        scripts/config --enable ACPI_BUTTON
+        scripts/config --enable ACPI_POWER_METER
+        scripts/config --enable ACPI_PROC_EVENT
+        scripts/config --enable ACPI_SYSTEM_POWER_STATES_SUPPORT
+        make olddefconfig
+
+    - name: Build kernel
+      run: |
+        cd linux-6.18
+        if [ -f "arch/x86/boot/bzImage" ] && [ "${{ steps.kernel-cache.outputs.cache-hit }}" == "true" ]; then
+          echo "✅ 使用缓存的内核，跳过编译"
+        else
+          echo "🔨 编译内核中（约 30 分钟）..."
+          start_time=$(date +%s)
+          make -j$(nproc) bzImage
+          make -j$(nproc) modules
+          end_time=$(date +%s)
+          duration=$((end_time - start_time))
+          echo "✅ 内核编译完成，耗时: $((duration / 60)) 分钟"
+        fi
+        echo "内核位置: $(pwd)/arch/x86/boot/bzImage"
+        ls -lh arch/x86/boot/bzImage
+
+    # ===== BusyBox 部分 =====
+    - name: Download BusyBox
+      if: steps.busybox-cache.outputs.cache-hit != 'true'
+      run: |
+        echo "📥 下载 BusyBox 1.36.1..."
+        wget -q https://busybox.net/downloads/busybox-1.36.1.tar.bz2
+        tar -xf busybox-1.36.1.tar.bz2
+        echo "✅ BusyBox 下载完成"
+
+    - name: Configure BusyBox
+      run: |
+        cd busybox-1.36.1
+        echo "🔧 配置 BusyBox..."
+        make defconfig
+        sed -i 's/# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
+        sed -i 's/# CONFIG_ASH is not set/CONFIG_ASH=y/' .config
+        sed -i 's/# CONFIG_SH is not set/CONFIG_SH=y/' .config
+        sed -i 's/# CONFIG_ASH_MATH_SUPPORT is not set/CONFIG_ASH_MATH_SUPPORT=y/' .config
+        sed -i 's/# CONFIG_ASH_MATH_SUPPORT_64 is not set/CONFIG_ASH_MATH_SUPPORT_64=y/' .config
+        sed -i 's/# CONFIG_REBOOT is not set/CONFIG_REBOOT=y/' .config
+        sed -i 's/# CONFIG_HALT is not set/CONFIG_HALT=y/' .config
+        sed -i 's/# CONFIG_POWEROFF is not set/CONFIG_POWEROFF=y/' .config
+        sed -i 's/CONFIG_TC=y/# CONFIG_TC is not set/' .config 2>/dev/null || true
+        sed -i 's/# CONFIG_FEATURE_PS_LONG is not set/CONFIG_FEATURE_PS_LONG=y/' .config
+        sed -i 's/# CONFIG_FEATURE_TOP_CPU_USAGE_PERCENTAGE is not set/CONFIG_FEATURE_TOP_CPU_USAGE_PERCENTAGE=y/' .config
+        sed -i 's/# CONFIG_FEATURE_SHUTDOWN_LOGIN is not set/CONFIG_FEATURE_SHUTDOWN_LOGIN=y/' .config
+        make oldconfig
+
+    - name: Build BusyBox
+      run: |
+        cd busybox-1.36.1
+        if [ -f "busybox" ] && [ "${{ steps.busybox-cache.outputs.cache-hit }}" == "true" ]; then
+          echo "✅ 使用缓存的 BusyBox，跳过编译"
+        else
+          echo "🔨 编译 BusyBox 中..."
+          make -j$(nproc)
+          make install
+          echo "✅ BusyBox 编译完成"
+        fi
+        ls -lh busybox
+
     # ===== 准备 MicroPython x64 （轻量级 Python 实现） =====
     - name: Prepare MicroPython x64
       run: |
@@ -10,7 +214,7 @@
         mkdir -p python-root/home
 
         # 1. 下载预编译的 MicroPython .deb 包 (amd64)
-        #    使用最新的 1.26.1 版本，可从多个镜像获取 [citation:5]
+        #    使用最新的 1.26.1 版本，可从多个镜像获取 
         MICROPYTHON_DEB_URL="http://ftp.dk.freebsd.org/pub/kali/pool/main/m/micropython/micropython_1.26.1+ds-1_amd64.deb"
         wget -q ${MICROPYTHON_DEB_URL} -O micropython.deb
 
@@ -80,3 +284,236 @@
         
         echo "✅ MicroPython 准备完成"
         echo "MicroPython 二进制大小: $(du -h python-root/usr/bin/micropython | cut -f1)"
+
+    # ===== 创建 rootfs =====
+    - name: Create rootfs
+      run: |
+        echo "📦 创建 rootfs..."
+        mkdir -p rootfs/{bin,sbin,usr/bin,usr/sbin,etc,proc,sys,dev,lib,lib64,tmp,var,run,root,usr/local/bin,usr/lib,home}
+        cp -a busybox-1.36.1/_install/* rootfs/
+        cp -a python-root/* rootfs/
+        cd rootfs/usr/bin
+        ln -sf python3 python
+        ln -sf python3 python3.12
+        cd ../../..
+        mkdir -p rootfs/etc/profile.d
+        cat > rootfs/etc/profile.d/python.sh << 'EOF'
+        export PYTHONPATH=/usr/lib/python3.12:/usr/local/lib/python3.12/site-packages
+        export PYTHONUNBUFFERED=1
+        EOF
+        chmod +x rootfs/etc/profile.d/python.sh
+        sudo mknod -m 666 rootfs/dev/null c 1 3
+        sudo mknod -m 644 rootfs/dev/console c 5 1
+        sudo mknod -m 660 rootfs/dev/tty1 c 4 1
+        sudo mknod -m 660 rootfs/dev/tty2 c 4 2
+        sudo mknod -m 660 rootfs/dev/tty3 c 4 3
+        sudo mknod -m 660 rootfs/dev/tty4 c 4 4
+        cat > rootfs/usr/local/bin/about << 'EOF'
+        #!/bin/sh
+        echo "====================="
+        echo "GudaoUI Linux V1"
+        echo "====================="
+        echo "System Information:"
+        echo "  OS: GudaoUI Linux"
+        echo "  Kernel: $(uname -r)"
+        echo "  Architecture: $(uname -m)"
+        echo ""
+        echo "Commands:"
+        echo "  about     - Show this information"
+        echo "  calc      - Simple calculator"
+        echo "  python    - Python interpreter"
+        echo "  reboot    - Restart system"
+        echo "  poweroff  - Shutdown system"
+        echo ""
+        if command -v python3 >/dev/null 2>&1; then
+            echo "Python: $(python3 --version 2>&1)"
+        else
+            echo "Python: Not available"
+        fi
+        EOF
+        chmod +x rootfs/usr/local/bin/about
+        cat > rootfs/usr/local/bin/calc << 'EOF'
+        #!/bin/sh
+        if [ $# -eq 0 ]; then
+            echo "Usage: calc <expression>"
+            echo "Example: calc 1+1"
+            echo "Example: calc (2*2)+2"
+            exit 1
+        fi
+        expression="$*"
+        result=$(awk "BEGIN {print $expression}")
+        if [ "$result" = "${result%.*}" ]; then
+            echo "$result"
+        else
+            printf "%.2f\n" "$result"
+        fi
+        EOF
+        chmod +x rootfs/usr/local/bin/calc
+        cat > rootfs/usr/local/bin/reboot << 'EOF'
+        #!/bin/sh
+        echo "System is rebooting..."
+        sync
+        /bin/busybox reboot -f
+        EOF
+        chmod +x rootfs/usr/local/bin/reboot
+        cat > rootfs/usr/local/bin/poweroff << 'EOF'
+        #!/bin/sh
+        echo "System is powering off..."
+        sync
+        /bin/busybox poweroff -f
+        EOF
+        chmod +x rootfs/usr/local/bin/poweroff
+        cd rootfs/usr/bin
+        ln -sf ../local/bin/about about
+        ln -sf ../local/bin/calc calc
+        ln -sf ../local/bin/reboot reboot
+        ln -sf ../local/bin/poweroff poweroff
+        ln -sf poweroff halt
+        cd ../../..
+        cat > rootfs/init << 'EOF'
+        #!/bin/busybox sh
+        export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin
+        export LD_LIBRARY_PATH=/usr/lib:/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
+        export PYTHONPATH=/usr/lib/python3.12:/usr/local/lib/python3.12/site-packages
+        export PYTHONUNBUFFERED=1
+        export TERM=linux
+        /bin/busybox mount -t proc none /proc
+        /bin/busybox mount -t sysfs none /sys
+        /bin/busybox mount -t devtmpfs none /dev
+        /bin/busybox mount -t tmpfs tmpfs /tmp
+        /bin/busybox mount -t tmpfs tmpfs /run
+        /bin/busybox mount -t tmpfs tmpfs /dev/shm
+        /bin/busybox mkdir -p /dev/shm /run/lock /etc/profile.d
+        /bin/busybox mknod -m 660 /dev/tty1 c 4 1 2>/dev/null || true
+        /bin/busybox mknod -m 660 /dev/tty2 c 4 2 2>/dev/null || true
+        /bin/busybox echo "gudao-ui" > /proc/sys/kernel/hostname 2>/dev/null || true
+        /bin/busybox ip link set lo up 2>/dev/null || true
+        /bin/busybox --install -s
+        MEM_SIZE=$(grep MemTotal /proc/meminfo 2>/dev/null | awk '{print int($2/1024)}')
+        [ -z "$MEM_SIZE" ] && MEM_SIZE="Unknown"
+        clear
+        echo "========================================"
+        echo "     GudaoUI Linux V1"
+        echo "========================================"
+        echo ""
+        echo "Available commands:"
+        echo "  about     - System information"
+        echo "  calc      - Calculator (e.g., calc 1+1)"
+        echo "  python    - Python interpreter"
+        echo "  reboot    - Restart system"
+        echo "  poweroff  - Shutdown system"
+        echo ""
+        echo "System: Linux $(uname -r) $(uname -m)"
+        echo "Memory: ${MEM_SIZE}MB"
+        if command -v python3 >/dev/null 2>&1; then
+            PY_VERSION=$(python3 --version 2>&1 | cut -d' ' -f2)
+            echo "Python: ${PY_VERSION}"
+        fi
+        echo ""
+        echo "Welcome to GudaoUI Linux!"
+        echo "========================================"
+        echo ""
+        exec /bin/sh
+        EOF
+        chmod +x rootfs/init
+        echo "root:x:0:0:root:/root:/bin/sh" > rootfs/etc/passwd
+        echo "root:x:0:" > rootfs/etc/group
+        echo "nameserver 8.8.8.8" > rootfs/etc/resolv.conf
+        echo "127.0.0.1 localhost gudao-ui" > rootfs/etc/hosts
+        cat > rootfs/etc/fstab << 'EOF'
+        proc    /proc    proc    defaults    0 0
+        sysfs   /sys     sysfs   defaults    0 0
+        devtmpfs /dev    devtmpfs defaults  0 0
+        tmpfs   /tmp     tmpfs   defaults    0 0
+        tmpfs   /run     tmpfs   defaults    0 0
+        EOF
+        cat > rootfs/etc/profile << 'EOF'
+        export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin
+        export LD_LIBRARY_PATH=/usr/lib:/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
+        export PYTHONPATH=/usr/lib/python3.12:/usr/local/lib/python3.12/site-packages
+        export PYTHONUNBUFFERED=1
+        export TERM=linux
+        export PS1='\u@\h:\w\$ '
+        alias ll='ls -la'
+        alias python='python3'
+        EOF
+        cd rootfs
+        find . | cpio -o -H newc > ../rootfs.cpio
+        cd ..
+        echo "rootfs.cpio 大小: $(du -h rootfs.cpio | cut -f1)"
+        echo "Python 二进制大小: $(du -h rootfs/usr/bin/python3 | cut -f1)"
+
+    # ===== 创建 ISO =====
+    - name: Create bootable ISO
+      run: |
+        echo "💿 创建启动 ISO..."
+        mkdir -p iso/boot/grub
+        cp linux-6.18/arch/x86/boot/bzImage iso/boot/vmlinuz
+        cp rootfs.cpio iso/boot/initramfs.cpio
+        cat > iso/boot/grub/grub.cfg << EOF
+        set default=0
+        set timeout=3
+        menuentry "GudaoUI Linux V1 with Python" {
+          linux /boot/vmlinuz quiet console=tty0
+          initrd /boot/initramfs.cpio
+        }
+        menuentry "GudaoUI Linux V1 (Debug)" {
+          linux /boot/vmlinuz loglevel=7 console=tty0
+          initrd /boot/initramfs.cpio
+        }
+        EOF
+        grub-mkrescue -o "$ISO_NAME" iso/
+        echo "✅ ISO 创建完成: $ISO_NAME"
+        echo "ISO 大小: $(du -h $ISO_NAME | cut -f1)"
+
+    # ===== 上传 ISO =====
+    - name: Upload ISO to Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.set-release-info.outputs.iso_name }}
+        path: ${{ steps.set-release-info.outputs.iso_name }}
+        retention-days: 30
+
+    # ===== 创建 Release（已修复语法）=====
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        name: ${{ steps.set-release-info.outputs.release_title }}
+        tag_name: ${{ steps.set-release-info.outputs.release_tag }}
+        body: |
+          ## 🎉 GudaoUI Linux V1 with MicroPython
+          
+          ### 📦 包含组件
+          - Linux 内核 6.18 (虚拟机优化版)
+          - BusyBox 1.36.1 (静态编译)
+          - **MicroPython x64** (轻量级 Python 实现)
+          
+          ### 💻 可用命令
+          about - 显示系统信息
+          calc - 简单计算器 (如: calc 1+1)
+          python - MicroPython 解释器 (可直接运行)
+          reboot - 重启系统
+          poweroff - 关闭系统
+
+          ### 🐍 MicroPython 测试
+          进入 MicroPython REPL
+          python
+
+          运行 Python 代码
+          python -c "print('Hello, World!')"
+
+          查看版本
+          python --version
+
+          ### ⚡ 虚拟机优化
+          已启用 VirtIO 驱动和 ACPI 电源管理
+
+          ### 📊 构建信息
+          - 构建时间: $(date '+%Y-%m-%d %H:%M:%S')
+          - ISO 大小: $(du -h ${{ steps.set-release-info.outputs.iso_name }} | cut -f1)
+        files: |
+          ${{ steps.set-release-info.outputs.iso_name }}
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
