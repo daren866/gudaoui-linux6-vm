@@ -482,7 +482,7 @@ jobs:
         sudo mknod -m 660 initramfs/dev/tty3 c 4 3 || true
         sudo mknod -m 660 initramfs/dev/tty4 c 4 4 || true
         
-        # 创建更完善的 init 脚本，增强设备扫描并修正 squashfs 路径
+        # 创建增强的 init 脚本（带调试）
         printf '%s\n' \
           '#!/bin/sh' \
           '' \
@@ -533,6 +533,10 @@ jobs:
           '    exec sh' \
           '}' \
           '' \
+          '# 检查 /mnt/root 内容' \
+          'echo "Contents of /mnt/root (squashfs):"' \
+          'ls -la /mnt/root' \
+          '' \
           '# 创建 overlay 所需的目录' \
           'mkdir -p /mnt/overlay /mnt/work' \
           '' \
@@ -544,6 +548,16 @@ jobs:
           '    echo "ERROR: Failed to mount overlay"' \
           '    exec sh' \
           '}' \
+          '' \
+          '# 检查 /newroot 内容' \
+          'echo "Contents of /newroot (overlay):"' \
+          'ls -la /newroot' \
+          '' \
+          '# 确保 /newroot/init 存在且可执行' \
+          'if [ ! -x /newroot/init ]; then' \
+          '    echo "ERROR: /newroot/init not found or not executable!"' \
+          '    exec sh' \
+          'fi' \
           '' \
           '# 清理并切换到新根' \
           'umount /proc /sys /dev 2>/dev/null' \
