@@ -206,11 +206,11 @@ jobs:
         git clone https://github.com/micropython/micropython.git
         cd micropython
         
-        # 切换到稳定版本（v1.24.1 是最新稳定版）
+        # 切换到稳定版本（v1.24.1）
         git checkout v1.24.1
         
-        # 初始化所有子模块（mbedtls, berkeley-db等）
-        echo "📦 初始化子模块（解决 mbedtls/berkeley-db 依赖）..."
+        # 初始化所有子模块
+        echo "📦 初始化子模块..."
         git submodule update --init --recursive
         
         # 编译 mpy-cross
@@ -220,7 +220,7 @@ jobs:
         # 进入 Unix 端口目录
         cd ports/unix
         
-        # 为了减小体积，禁用不需要的模块（使用 echo 避免 heredoc）
+        # 最小化配置
         echo "MICROPY_PY_BTREE = 0" > mpconfigport.mk
         echo "MICROPY_PY_SSL = 0" >> mpconfigport.mk
         echo "MICROPY_PY_CRYPTOLIB = 0" >> mpconfigport.mk
@@ -241,21 +241,29 @@ jobs:
           MICROPY_PY_CRYPTOLIB=0 \
           MICROPY_PY_HASHLIB=0
         
+        # 复制生成的可执行文件（可能位于 build-standard/micropython）
         if [ -f "micropython" ]; then
-          echo "✅ MicroPython 编译成功"
-          file micropython
+            cp micropython ../../../python-root/usr/bin/
+        elif [ -f "build-standard/micropython" ]; then
+            cp build-standard/micropython ../../../python-root/usr/bin/
         else
-          echo "❌ MicroPython 编译失败"
-          exit 1
+            echo "❌ MicroPython 编译失败: 找不到 micropython 可执行文件"
+            exit 1
         fi
         
-        # 复制编译好的二进制文件
-        cp micropython ../../../python-root/usr/bin/
+        # 验证复制结果
+        if [ -f "../../../python-root/usr/bin/micropython" ]; then
+            echo "✅ MicroPython 编译成功"
+            file ../../../python-root/usr/bin/micropython
+        else
+            echo "❌ MicroPython 编译失败"
+            exit 1
+        fi
         
         cd ../../..
         rm -rf micropython
 
-        # 创建测试脚本（使用 printf 代替 heredoc）
+        # 创建测试脚本
         printf '%s\n' \
           'import sys' \
           'print("=" * 40)' \
