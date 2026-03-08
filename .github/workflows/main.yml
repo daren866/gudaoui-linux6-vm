@@ -118,106 +118,96 @@ jobs:
           tar -xf linux-6.18.tar.xz
           echo "✅ 内核源码下载完成"
 
-      - name: Configure kernel
+      # ===== 使用完整的 .config 进行内核配置（修复依赖问题）=====
+      - name: Configure kernel with full driver support
         run: |
           cd linux-6.18
-          echo "📝 配置内核..."
-          wget -q -O .config.original \
-            https://raw.githubusercontent.com/puppylinux-woof-CE/woof-CE/testing/kernel-kit/configs_x86_64/DOTconfig-6.18.1-x86_64 \
-            || true
-          if [ -f .config.original ]; then
-            cp .config.original .config
-          else
-            make defconfig
-          fi
-          echo "🔧 应用虚拟机优化（添加 VBox、VMware、QEMU 网卡和声卡驱动）..."
 
-          # 基础虚拟化驱动
-          scripts/config --enable VIRTIO
-          scripts/config --enable VIRTIO_PCI
-          scripts/config --enable VIRTIO_BLK
-          scripts/config --enable VIRTIO_NET
-          scripts/config --enable VIRTIO_CONSOLE
-          scripts/config --enable VIRTIO_BALLOON
-          scripts/config --enable VIRTIO_INPUT
-          scripts/config --enable VIRTIO_MMIO
+          # 生成一个包含所有必要驱动的 .config 文件
+          cat > .config << 'EOF'
+          # 基础设置
+          CONFIG_64BIT=y
+          CONFIG_X86_64=y
+          CONFIG_SMP=y
+          CONFIG_PCI=y
+
+          # 必须的基础选项
+          CONFIG_SOUND=y
+          CONFIG_SND=y
+          CONFIG_SND_PCI=y
+          CONFIG_SND_HDA_INTEL=y
+          CONFIG_SND_HDA_CODEC_REALTEK=y
+          CONFIG_SND_HDA_CODEC_HDMI=y
+          CONFIG_SND_HDA_CODEC_GENERIC=y
+          CONFIG_SND_AC97_CODEC=y
+          CONFIG_SND_INTEL8X0=y
+          CONFIG_SND_INTEL8X0M=y
+          CONFIG_SND_SB16=y
+          CONFIG_SND_ENS1370=y
+          CONFIG_SND_ENS1371=y
+
+          # USB 支持（声卡可能需要）
+          CONFIG_USB_SUPPORT=y
+          CONFIG_USB=y
+          CONFIG_USB_AUDIO=y
+
+          # 网络驱动
+          CONFIG_NETDEVICES=y
+          CONFIG_E1000=y
+          CONFIG_E1000E=y
+          CONFIG_RTL8139=y
+          CONFIG_PCNET32=y
+          CONFIG_NE2K_PCI=y
+          CONFIG_8139TOO=y
+
+          # VirtIO 驱动（QEMU）
+          CONFIG_VIRTIO=y
+          CONFIG_VIRTIO_PCI=y
+          CONFIG_VIRTIO_BLK=y
+          CONFIG_VIRTIO_NET=y
+          CONFIG_VIRTIO_CONSOLE=y
+          CONFIG_VIRTIO_BALLOON=y
+          CONFIG_VIRTIO_INPUT=y
+          CONFIG_VIRTIO_MMIO=y
 
           # VMware 驱动
-          scripts/config --enable VMXNET3
-          scripts/config --enable DRM_VMWGFX
-          scripts/config --enable VMWARE_BALLOON
-          scripts/config --enable VMWARE_VMCI
-          scripts/config --enable VMWARE_VMCI_VSOCKETS
-          scripts/config --enable VMWARE_PVSCSI
+          CONFIG_VMXNET3=y
+          CONFIG_DRM_VMWGFX=y
+          CONFIG_VMWARE_BALLOON=y
+          CONFIG_VMWARE_VMCI=y
+          CONFIG_VMWARE_VMCI_VSOCKETS=y
+          CONFIG_VMWARE_PVSCSI=y
 
           # VirtualBox 驱动
-          scripts/config --enable VBOXGUEST
-          scripts/config --enable DRM_VBOXVIDEO
-          scripts/config --enable VBOXSF_FS
-
-          # QEMU 驱动
-          scripts/config --enable E1000
-          scripts/config --enable E1000E
-          scripts/config --enable RTL8139
-          scripts/config --enable PCNET32
-          scripts/config --enable NE2K_PCI
-          scripts/config --enable 8139TOO
-
-          # 声卡驱动（启用通用声音架构）
-          scripts/config --enable SOUND
-          scripts/config --enable SND
-          scripts/config --enable SND_PCI
-
-          # AC97 声卡（QEMU 默认）
-          scripts/config --enable SND_AC97_CODEC
-          scripts/config --enable SND_INTEL8X0
-          scripts/config --enable SND_INTEL8X0M
-
-          # Intel HDA 声卡（现代虚拟机）
-          scripts/config --enable SND_HDA_INTEL
-          scripts/config --enable SND_HDA_CODEC_REALTEK
-          scripts/config --enable SND_HDA_CODEC_HDMI
-          scripts/config --enable SND_HDA_CODEC_GENERIC
-
-          # 其他常见声卡
-          scripts/config --enable SND_SB16
-          scripts/config --enable SND_SB8
-          scripts/config --enable SND_SBAWE
-          scripts/config --enable SND_SB16_CSP
-          scripts/config --enable SND_ENS1370
-          scripts/config --enable SND_ENS1371
-
-          # 启用声音核心功能
-          scripts/config --enable SND_DYNAMIC_MINORS
-          scripts/config --enable SND_VERBOSE_PRINTK
-          scripts/config --enable SND_DEBUG
-
-          # USB 支持（某些虚拟机需要 USB 声卡）
-          scripts/config --enable USB_SUPPORT
-          scripts/config --enable USB
-          scripts/config --enable USB_AUDIO
+          CONFIG_VBOXGUEST=y
+          CONFIG_DRM_VBOXVIDEO=y
+          CONFIG_VBOXSF_FS=y
 
           # 电源管理
-          scripts/config --enable POWER_SUPPLY
-          scripts/config --enable SUSPEND
-          scripts/config --enable HIBERNATION
-          scripts/config --enable ACPI
-          scripts/config --enable ACPI_BUTTON
-          scripts/config --enable ACPI_POWER_METER
-          scripts/config --enable ACPI_PROC_EVENT
-          scripts/config --enable ACPI_SYSTEM_POWER_STATES_SUPPORT
+          CONFIG_POWER_SUPPLY=y
+          CONFIG_SUSPEND=y
+          CONFIG_HIBERNATION=y
+          CONFIG_ACPI=y
+          CONFIG_ACPI_BUTTON=y
+          CONFIG_ACPI_POWER_METER=y
+          CONFIG_ACPI_PROC_EVENT=y
+          CONFIG_ACPI_SYSTEM_POWER_STATES_SUPPORT=y
 
-          # 禁用不必要的驱动以减小内核大小
-          scripts/config --disable WLAN
-          scripts/config --disable BLUETOOTH
-          scripts/config --disable RFKILL
-          scripts/config --disable IWLWIFI
-          scripts/config --disable ATH9K
-          scripts/config --disable B43
-          scripts/config --disable BCMA
-          scripts/config --disable SSB
+          # 文件系统支持（用于 squashfs 和 overlay）
+          CONFIG_SQUASHFS=y
+          CONFIG_SQUASHFS_XZ=y
+          CONFIG_OVERLAY_FS=y
 
+          # 禁用无线网络驱动以减小内核体积
+          # CONFIG_WLAN is not set
+          # CONFIG_BLUETOOTH is not set
+          # CONFIG_RFKILL is not set
+          EOF
+
+          # 使用 olddefconfig 自动处理依赖关系
           make olddefconfig
+
+          echo "✅ 内核配置完成"
 
       - name: Build kernel
         run: |
