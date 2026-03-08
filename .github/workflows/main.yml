@@ -495,7 +495,7 @@ jobs:
         sudo mknod -m 660 initramfs/dev/tty3 c 4 3 || true
         sudo mknod -m 660 initramfs/dev/tty4 c 4 4 || true
         
-        # 创建 init 脚本
+        # 创建 init 脚本（已修复 overlay 挂载问题）
         printf '%s\n' \
           '#!/bin/sh' \
           '' \
@@ -551,13 +551,12 @@ jobs:
           'ls -la /mnt/root' \
           '' \
           '# 创建 overlay 所需的目录' \
-          'mkdir -p /mnt/overlay /mnt/work' \
-          '' \
           '# 挂载 tmpfs 作为上层' \
           'mount -t tmpfs tmpfs /mnt/overlay' \
+          'mkdir -p /mnt/overlay/upper /mnt/overlay/work' \
           '' \
           '# 使用 overlay 合并只读 squashfs 和可写 tmpfs' \
-          'mount -t overlay overlay -o lowerdir=/mnt/root,upperdir=/mnt/overlay,workdir=/mnt/work /newroot || {' \
+          'mount -t overlay overlay -o lowerdir=/mnt/root,upperdir=/mnt/overlay/upper,workdir=/mnt/overlay/work /newroot || {' \
           '    echo "ERROR: Failed to mount overlay"' \
           '    exec sh' \
           '}' \
