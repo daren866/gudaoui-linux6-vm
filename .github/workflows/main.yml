@@ -195,7 +195,7 @@ jobs:
         fi
         ls -lh busybox
 
-    # ===== MicroPython 构建（启用 SSL，禁用 cryptolib 以解决编译错误）=====
+    # ===== MicroPython 构建（启用 SSL，禁用 cryptolib，通过配置文件确保）=====
     - name: Build MicroPython from source
       run: |
         echo "🐍 从源码编译 MicroPython x64（启用 SSL，禁用 cryptolib）..."
@@ -222,23 +222,25 @@ jobs:
         # 进入 Unix 端口目录
         cd ports/unix
         
-        # 移除可能存在的旧配置文件
-        rm -f mpconfigport.mk
+        # 创建 mpconfigport.mk 文件，明确配置
+        echo "📝 写入 mpconfigport.mk 配置..."
+        cat > mpconfigport.mk << 'EOF'
+# 模块配置
+MICROPY_PY_BTREE = 0
+MICROPY_PY_SSL = 1
+MICROPY_PY_CRYPTOLIB = 0
+MICROPY_PY_HASHLIB = 1
+MICROPY_PY_TERMIOS = 1
+MICROPY_PY_SOCKET = 1
+MICROPY_PY_FFI = 0
+MICROPY_PY_THREAD = 0
+MICROPY_USE_READLINE = 1
+EOF
         
-        echo "📝 使用配置编译（SSL 启用，cryptolib 禁用）..."
-        
-        # 编译 Unix 版本的 MicroPython（静态编译，启用 SSL，禁用 cryptolib）
+        echo "🔨 编译 MicroPython（静态编译，启用 SSL）..."
+        # 编译 Unix 版本的 MicroPython
         make -j$(nproc) \
-          CFLAGS_EXTRA="-static -I../../lib/mbedtls/include" \
-          MICROPY_PY_BTREE=0 \
-          MICROPY_PY_SSL=1 \
-          MICROPY_PY_CRYPTOLIB=0 \
-          MICROPY_PY_HASHLIB=1 \
-          MICROPY_PY_TERMIOS=1 \
-          MICROPY_PY_SOCKET=1 \
-          MICROPY_PY_FFI=0 \
-          MICROPY_PY_THREAD=0 \
-          MICROPY_USE_READLINE=1
+          CFLAGS_EXTRA="-static -I../../lib/mbedtls/include"
         
         # 复制生成的可执行文件
         if [ -f "micropython" ]; then
