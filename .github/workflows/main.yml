@@ -116,7 +116,7 @@ jobs:
           python3 \
           squashfs-tools \
           libffi-dev \
-          git   # 添加 git，用于克隆 MicroPython
+          git
 
     # ===== 内核部分 =====
     - name: Download kernel source
@@ -221,7 +221,7 @@ jobs:
         fi
         ls -lh busybox
 
-    # ===== MicroPython 部分（修复：使用 git clone 并初始化子模块）=====
+    # ===== MicroPython 部分（修复：使用 git clone 并正确处理二进制路径）=====
     - name: Clone MicroPython source
       if: steps.micropython-cache.outputs.cache-hit != 'true'
       run: |
@@ -238,8 +238,19 @@ jobs:
           echo "✅ 使用缓存的 MicroPython，跳过编译"
         else
           echo "🔨 编译 MicroPython 中..."
+          set -e  # 遇到错误立即退出
           make -C mpy-cross
           make -C ports/unix
+          # 检查二进制是否存在（可能在 ports/unix 或 ports/unix/build-standard）
+          if [ -f ports/unix/micropython ]; then
+            echo "✅ MicroPython 二进制位于 ports/unix/micropython"
+          elif [ -f ports/unix/build-standard/micropython ]; then
+            echo "✅ MicroPython 二进制位于 ports/unix/build-standard/micropython，创建符号链接"
+            ln -sf build-standard/micropython ports/unix/micropython
+          else
+            echo "❌ MicroPython 编译后未找到可执行文件！"
+            exit 1
+          fi
           echo "✅ MicroPython 编译完成"
         fi
         ls -lh ports/unix/micropython
@@ -251,7 +262,7 @@ jobs:
         mkdir -p squashfs-root/{bin,sbin,usr/bin,usr/sbin,etc,proc,sys,dev,lib,lib64,tmp,var,run,root,usr/lib,home}
         # 复制 busybox _install
         cp -a busybox-1.36.1/_install/* squashfs-root/
-        # 复制 MicroPython 二进制
+        # 复制 MicroPython 二进制（现在路径已统一为 ports/unix/micropython）
         mkdir -p squashfs-root/usr/bin
         cp micropython/ports/unix/micropython squashfs-root/usr/bin/
         # 创建符号链接 python -> micropython
