@@ -482,66 +482,65 @@ jobs:
         sudo mknod -m 660 initramfs/dev/tty3 c 4 3 || true
         sudo mknod -m 660 initramfs/dev/tty4 c 4 4 || true
         
-        # 创建 init 脚本
-        cat > initramfs/init << 'EOF'
-#!/bin/sh
-
-# 挂载必要的文件系统
-mount -t proc none /proc
-mount -t sysfs none /sys
-mount -t devtmpfs none /dev
-
-# 打印启动信息
-echo "GudaoUI Linux - Booting from squashfs with overlay..."
-
-# 尝试找到包含 rootfs.squashfs 的设备（通常是 CD-ROM /dev/sr0）
-# 这里假设 squashfs 文件位于 ISO 的根目录，我们挂载 ISO 到 /mnt/iso
-# 扫描可能的设备（简单起见，直接尝试 /dev/sr0）
-mkdir -p /mnt/iso
-if mount -t iso9660 /dev/sr0 /mnt/iso 2>/dev/null; then
-    echo "Mounted ISO from /dev/sr0"
-elif mount -t iso9660 /dev/sr1 /mnt/iso 2>/dev/null; then
-    echo "Mounted ISO from /dev/sr1"
-else
-    echo "Failed to mount ISO. Trying all block devices..."
-    # 更复杂的扫描（可选）
-    for dev in /dev/sr* /dev/hd* /dev/sd*; do
-        [ -e "$dev" ] || continue
-        if mount -t iso9660 "$dev" /mnt/iso 2>/dev/null; then
-            echo "Mounted ISO from $dev"
-            break
-        fi
-    done
-fi
-
-# 检查 squashfs 文件是否存在
-if [ ! -f /mnt/iso/rootfs.squashfs ]; then
-    echo "ERROR: rootfs.squashfs not found on ISO!"
-    exec sh
-fi
-
-# 挂载 squashfs（只读）到 /mnt/root
-mount -t squashfs -o ro,loop /mnt/iso/rootfs.squashfs /mnt/root || {
-    echo "ERROR: Failed to mount squashfs"
-    exec sh
-}
-
-# 创建 overlay 所需的目录
-mkdir -p /mnt/overlay /mnt/work
-
-# 挂载 tmpfs 作为上层
-mount -t tmpfs tmpfs /mnt/overlay
-
-# 使用 overlay 合并只读 squashfs 和可写 tmpfs
-mount -t overlay overlay -o lowerdir=/mnt/root,upperdir=/mnt/overlay,workdir=/mnt/work /newroot || {
-    echo "ERROR: Failed to mount overlay"
-    exec sh
-}
-
-# 清理并切换到新根
-umount /proc /sys /dev 2>/dev/null
-exec switch_root /newroot /init
-EOF
+        # 使用 printf 创建 init 脚本，避免 heredoc 缩进问题
+        printf '%s\n' \
+          '#!/bin/sh' \
+          '' \
+          '# 挂载必要的文件系统' \
+          'mount -t proc none /proc' \
+          'mount -t sysfs none /sys' \
+          'mount -t devtmpfs none /dev' \
+          '' \
+          '# 打印启动信息' \
+          'echo "GudaoUI Linux - Booting from squashfs with overlay..."' \
+          '' \
+          '# 尝试找到包含 rootfs.squashfs 的设备（通常是 CD-ROM /dev/sr0）' \
+          '# 这里假设 squashfs 文件位于 ISO 的根目录，我们挂载 ISO 到 /mnt/iso' \
+          '# 扫描可能的设备（简单起见，直接尝试 /dev/sr0）' \
+          'mkdir -p /mnt/iso' \
+          'if mount -t iso9660 /dev/sr0 /mnt/iso 2>/dev/null; then' \
+          '    echo "Mounted ISO from /dev/sr0"' \
+          'elif mount -t iso9660 /dev/sr1 /mnt/iso 2>/dev/null; then' \
+          '    echo "Mounted ISO from /dev/sr1"' \
+          'else' \
+          '    echo "Failed to mount ISO. Trying all block devices..."' \
+          '    # 更复杂的扫描（可选）' \
+          '    for dev in /dev/sr* /dev/hd* /dev/sd*; do' \
+          '        [ -e "$dev" ] || continue' \
+          '        if mount -t iso9660 "$dev" /mnt/iso 2>/dev/null; then' \
+          '            echo "Mounted ISO from $dev"' \
+          '            break' \
+          '        fi' \
+          '    done' \
+          'fi' \
+          '' \
+          '# 检查 squashfs 文件是否存在' \
+          'if [ ! -f /mnt/iso/rootfs.squashfs ]; then' \
+          '    echo "ERROR: rootfs.squashfs not found on ISO!"' \
+          '    exec sh' \
+          'fi' \
+          '' \
+          '# 挂载 squashfs（只读）到 /mnt/root' \
+          'mount -t squashfs -o ro,loop /mnt/iso/rootfs.squashfs /mnt/root || {' \
+          '    echo "ERROR: Failed to mount squashfs"' \
+          '    exec sh' \
+          '}' \
+          '' \
+          '# 创建 overlay 所需的目录' \
+          'mkdir -p /mnt/overlay /mnt/work' \
+          '' \
+          '# 挂载 tmpfs 作为上层' \
+          'mount -t tmpfs tmpfs /mnt/overlay' \
+          '' \
+          '# 使用 overlay 合并只读 squashfs 和可写 tmpfs' \
+          'mount -t overlay overlay -o lowerdir=/mnt/root,upperdir=/mnt/overlay,workdir=/mnt/work /newroot || {' \
+          '    echo "ERROR: Failed to mount overlay"' \
+          '    exec sh' \
+          '}' \
+          '' \
+          '# 清理并切换到新根' \
+          'umount /proc /sys /dev 2>/dev/null' \
+          'exec switch_root /newroot /init' > initramfs/init
         chmod +x initramfs/init
         
         # 打包 initramfs
@@ -558,19 +557,18 @@ EOF
         cp initramfs.cpio.gz iso/boot/initramfs.cpio.gz
         cp rootfs.squashfs iso/boot/rootfs.squashfs  # 将 squashfs 放入 ISO 中
         
-        # 创建 GRUB 配置文件
-        cat > iso/boot/grub/grub.cfg << EOF
-set default=0
-set timeout=3
-menuentry "GudaoUI Linux V1 with MicroPython (SquashFS+Overlay)" {
-  linux /boot/vmlinuz quiet
-  initrd /boot/initramfs.cpio.gz
-}
-menuentry "GudaoUI Linux V1 (Debug)" {
-  linux /boot/vmlinuz loglevel=7
-  initrd /boot/initramfs.cpio.gz
-}
-EOF
+        # 使用 printf 写入 grub.cfg，避免 heredoc 问题
+        printf '%s\n' \
+          'set default=0' \
+          'set timeout=3' \
+          'menuentry "GudaoUI Linux V1 with MicroPython (SquashFS+Overlay)" {' \
+          '  linux /boot/vmlinuz quiet' \
+          '  initrd /boot/initramfs.cpio.gz' \
+          '}' \
+          'menuentry "GudaoUI Linux V1 (Debug)" {' \
+          '  linux /boot/vmlinuz loglevel=7' \
+          '  initrd /boot/initramfs.cpio.gz' \
+          '}' > iso/boot/grub/grub.cfg
         
         grub-mkrescue -o "$ISO_NAME" iso/
         echo "✅ ISO 创建完成: $ISO_NAME"
