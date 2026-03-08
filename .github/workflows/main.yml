@@ -220,7 +220,7 @@ jobs:
         # 进入 Unix 端口目录
         cd ports/unix
         
-        # 为了减小体积，禁用不需要的模块（使用 echo 避免 heredoc 缩进问题）
+        # 为了减小体积，禁用不需要的模块（使用 echo 避免 heredoc）
         echo "MICROPY_PY_BTREE = 0" > mpconfigport.mk
         echo "MICROPY_PY_SSL = 0" >> mpconfigport.mk
         echo "MICROPY_PY_CRYPTOLIB = 0" >> mpconfigport.mk
@@ -255,21 +255,21 @@ jobs:
         cd ../../..
         rm -rf micropython
 
-        # 创建测试脚本（保留 heredoc，但结束符已顶格）
-        cat > python-root/home/test.py << 'EOF'
-import sys
-print("=" * 40)
-print("MicroPython Test")
-print("=" * 40)
-print(f"MicroPython version: {sys.version}")
-print(f"Platform: {sys.platform}")
-print("=" * 40)
-print("\nSimple calculations:")
-print(f"1 + 2 = {1 + 2}")
-print(f"3 * 4 = {3 * 4}")
-print(f"10 / 3 = {10 / 3}")
-print("\nMicroPython is working in your custom system!")
-EOF
+        # 创建测试脚本（使用 printf 代替 heredoc）
+        printf '%s\n' \
+          'import sys' \
+          'print("=" * 40)' \
+          'print("MicroPython Test")' \
+          'print("=" * 40)' \
+          'print(f"MicroPython version: {sys.version}")' \
+          'print(f"Platform: {sys.platform}")' \
+          'print("=" * 40)' \
+          'print("\nSimple calculations:")' \
+          'print(f"1 + 2 = {1 + 2}")' \
+          'print(f"3 * 4 = {3 * 4}")' \
+          'print(f"10 / 3 = {10 / 3}")' \
+          'print("\nMicroPython is working in your custom system!")' \
+          > python-root/home/test.py
         chmod +x python-root/home/test.py
         
         # 创建符号链接
@@ -297,9 +297,8 @@ EOF
         cd ../../..
         
         mkdir -p rootfs/etc/profile.d
-        cat > rootfs/etc/profile.d/python.sh << 'EOF'
-export PATH=/usr/bin:$PATH
-EOF
+        # 使用 printf 写入 python.sh
+        printf '%s\n' 'export PATH=/usr/bin:$PATH' > rootfs/etc/profile.d/python.sh
         chmod +x rootfs/etc/profile.d/python.sh
         
         sudo mknod -m 666 rootfs/dev/null c 1 3
@@ -309,63 +308,63 @@ EOF
         sudo mknod -m 660 rootfs/dev/tty3 c 4 3
         sudo mknod -m 660 rootfs/dev/tty4 c 4 4
         
-        cat > rootfs/usr/local/bin/about << 'EOF'
-#!/bin/sh
-echo "====================="
-echo "GudaoUI Linux V1"
-echo "====================="
-echo "System Information:"
-echo "  OS: GudaoUI Linux"
-echo "  Kernel: $(uname -r)"
-echo "  Architecture: $(uname -m)"
-echo ""
-echo "Commands:"
-echo "  about     - Show this information"
-echo "  calc      - Simple calculator"
-echo "  python    - MicroPython interpreter"
-echo "  reboot    - Restart system"
-echo "  poweroff  - Shutdown system"
-echo ""
-if command -v python >/dev/null 2>&1; then
-    echo "MicroPython: $(python --version 2>&1)"
-else
-    echo "MicroPython: Not available"
-fi
-EOF
+        # about 脚本
+        printf '%s\n' \
+          '#!/bin/sh' \
+          'echo "====================="' \
+          'echo "GudaoUI Linux V1"' \
+          'echo "====================="' \
+          'echo "System Information:"' \
+          'echo "  OS: GudaoUI Linux"' \
+          'echo "  Kernel: $(uname -r)"' \
+          'echo "  Architecture: $(uname -m)"' \
+          'echo ""' \
+          'echo "Commands:"' \
+          'echo "  about     - Show this information"' \
+          'echo "  calc      - Simple calculator"' \
+          'echo "  python    - MicroPython interpreter"' \
+          'echo "  reboot    - Restart system"' \
+          'echo "  poweroff  - Shutdown system"' \
+          'echo ""' \
+          'if command -v python >/dev/null 2>&1; then' \
+          '    echo "MicroPython: $(python --version 2>&1)"' \
+          'else' \
+          '    echo "MicroPython: Not available"' \
+          'fi' > rootfs/usr/local/bin/about
         chmod +x rootfs/usr/local/bin/about
         
-        cat > rootfs/usr/local/bin/calc << 'EOF'
-#!/bin/sh
-if [ $# -eq 0 ]; then
-    echo "Usage: calc <expression>"
-    echo "Example: calc 1+1"
-    echo "Example: calc (2*2)+2"
-    exit 1
-fi
-expression="$*"
-result=$(awk "BEGIN {print $expression}")
-if [ "$result" = "${result%.*}" ]; then
-    echo "$result"
-else
-    printf "%.2f\n" "$result"
-fi
-EOF
+        # calc 脚本
+        printf '%s\n' \
+          '#!/bin/sh' \
+          'if [ $# -eq 0 ]; then' \
+          '    echo "Usage: calc <expression>"' \
+          '    echo "Example: calc 1+1"' \
+          '    echo "Example: calc (2*2)+2"' \
+          '    exit 1' \
+          'fi' \
+          'expression="$*"' \
+          'result=$(awk "BEGIN {print $expression}")' \
+          'if [ "$result" = "${result%.*}" ]; then' \
+          '    echo "$result"' \
+          'else' \
+          '    printf "%.2f\n" "$result"' \
+          'fi' > rootfs/usr/local/bin/calc
         chmod +x rootfs/usr/local/bin/calc
         
-        cat > rootfs/usr/local/bin/reboot << 'EOF'
-#!/bin/sh
-echo "System is rebooting..."
-sync
-/bin/busybox reboot -f
-EOF
+        # reboot 脚本
+        printf '%s\n' \
+          '#!/bin/sh' \
+          'echo "System is rebooting..."' \
+          'sync' \
+          '/bin/busybox reboot -f' > rootfs/usr/local/bin/reboot
         chmod +x rootfs/usr/local/bin/reboot
         
-        cat > rootfs/usr/local/bin/poweroff << 'EOF'
-#!/bin/sh
-echo "System is powering off..."
-sync
-/bin/busybox poweroff -f
-EOF
+        # poweroff 脚本
+        printf '%s\n' \
+          '#!/bin/sh' \
+          'echo "System is powering off..."' \
+          'sync' \
+          '/bin/busybox poweroff -f' > rootfs/usr/local/bin/poweroff
         chmod +x rootfs/usr/local/bin/poweroff
         
         cd rootfs/usr/bin
@@ -376,48 +375,48 @@ EOF
         ln -sf poweroff halt
         cd ../../..
         
-        cat > rootfs/init << 'EOF'
-#!/bin/busybox sh
-export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin
-export TERM=linux
-/bin/busybox mount -t proc none /proc
-/bin/busybox mount -t sysfs none /sys
-/bin/busybox mount -t devtmpfs none /dev
-/bin/busybox mount -t tmpfs tmpfs /tmp
-/bin/busybox mount -t tmpfs tmpfs /run
-/bin/busybox mount -t tmpfs tmpfs /dev/shm
-/bin/busybox mkdir -p /dev/shm /run/lock /etc/profile.d
-/bin/busybox mknod -m 660 /dev/tty1 c 4 1 2>/dev/null || true
-/bin/busybox mknod -m 660 /dev/tty2 c 4 2 2>/dev/null || true
-/bin/busybox echo "gudao-ui" > /proc/sys/kernel/hostname 2>/dev/null || true
-/bin/busybox ip link set lo up 2>/dev/null || true
-/bin/busybox --install -s
-MEM_SIZE=$(grep MemTotal /proc/meminfo 2>/dev/null | awk '{print int($2/1024)}')
-[ -z "$MEM_SIZE" ] && MEM_SIZE="Unknown"
-clear
-echo "========================================"
-echo "     GudaoUI Linux V1"
-echo "========================================"
-echo ""
-echo "Available commands:"
-echo "  about     - System information"
-echo "  calc      - Calculator (e.g., calc 1+1)"
-echo "  python    - MicroPython interpreter"
-echo "  reboot    - Restart system"
-echo "  poweroff  - Shutdown system"
-echo ""
-echo "System: Linux $(uname -r) $(uname -m)"
-echo "Memory: ${MEM_SIZE}MB"
-if command -v python >/dev/null 2>&1; then
-    PY_VERSION=$(python --version 2>&1)
-    echo "${PY_VERSION}"
-fi
-echo ""
-echo "Welcome to GudaoUI Linux!"
-echo "========================================"
-echo ""
-exec /bin/sh
-EOF
+        # init 脚本
+        printf '%s\n' \
+          '#!/bin/busybox sh' \
+          'export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin' \
+          'export TERM=linux' \
+          '/bin/busybox mount -t proc none /proc' \
+          '/bin/busybox mount -t sysfs none /sys' \
+          '/bin/busybox mount -t devtmpfs none /dev' \
+          '/bin/busybox mount -t tmpfs tmpfs /tmp' \
+          '/bin/busybox mount -t tmpfs tmpfs /run' \
+          '/bin/busybox mount -t tmpfs tmpfs /dev/shm' \
+          '/bin/busybox mkdir -p /dev/shm /run/lock /etc/profile.d' \
+          '/bin/busybox mknod -m 660 /dev/tty1 c 4 1 2>/dev/null || true' \
+          '/bin/busybox mknod -m 660 /dev/tty2 c 4 2 2>/dev/null || true' \
+          '/bin/busybox echo "gudao-ui" > /proc/sys/kernel/hostname 2>/dev/null || true' \
+          '/bin/busybox ip link set lo up 2>/dev/null || true' \
+          '/bin/busybox --install -s' \
+          'MEM_SIZE=$(grep MemTotal /proc/meminfo 2>/dev/null | awk '"'"'{print int($2/1024)}'"'"')' \
+          '[ -z "$MEM_SIZE" ] && MEM_SIZE="Unknown"' \
+          'clear' \
+          'echo "========================================"' \
+          'echo "     GudaoUI Linux V1"' \
+          'echo "========================================"' \
+          'echo ""' \
+          'echo "Available commands:"' \
+          'echo "  about     - System information"' \
+          'echo "  calc      - Calculator (e.g., calc 1+1)"' \
+          'echo "  python    - MicroPython interpreter"' \
+          'echo "  reboot    - Restart system"' \
+          'echo "  poweroff  - Shutdown system"' \
+          'echo ""' \
+          'echo "System: Linux $(uname -r) $(uname -m)"' \
+          'echo "Memory: ${MEM_SIZE}MB"' \
+          'if command -v python >/dev/null 2>&1; then' \
+          '    PY_VERSION=$(python --version 2>&1)' \
+          '    echo "${PY_VERSION}"' \
+          'fi' \
+          'echo ""' \
+          'echo "Welcome to GudaoUI Linux!"' \
+          'echo "========================================"' \
+          'echo ""' \
+          'exec /bin/sh' > rootfs/init
         chmod +x rootfs/init
         
         echo "root:x:0:0:root:/root:/bin/sh" > rootfs/etc/passwd
@@ -425,21 +424,21 @@ EOF
         echo "nameserver 8.8.8.8" > rootfs/etc/resolv.conf
         echo "127.0.0.1 localhost gudao-ui" > rootfs/etc/hosts
         
-        cat > rootfs/etc/fstab << 'EOF'
-proc    /proc    proc    defaults    0 0
-sysfs   /sys     sysfs   defaults    0 0
-devtmpfs /dev    devtmpfs defaults  0 0
-tmpfs   /tmp     tmpfs   defaults    0 0
-tmpfs   /run     tmpfs   defaults    0 0
-EOF
+        # fstab 文件
+        printf '%s\n' \
+          'proc    /proc    proc    defaults    0 0' \
+          'sysfs   /sys     sysfs   defaults    0 0' \
+          'devtmpfs /dev    devtmpfs defaults  0 0' \
+          'tmpfs   /tmp     tmpfs   defaults    0 0' \
+          'tmpfs   /run     tmpfs   defaults    0 0' > rootfs/etc/fstab
         
-        cat > rootfs/etc/profile << 'EOF'
-export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin
-export TERM=linux
-export PS1='\u@\h:\w\$ '
-alias ll='ls -la'
-alias python='micropython'
-EOF
+        # profile 文件
+        printf '%s\n' \
+          'export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin' \
+          'export TERM=linux' \
+          'export PS1='\''\u@\h:\w\$ '\' \
+          'alias ll='\''ls -la'\' \
+          'alias python='\''micropython'\' > rootfs/etc/profile
         
         cd rootfs
         find . | cpio -o -H newc > ../rootfs.cpio
@@ -455,18 +454,18 @@ EOF
         mkdir -p iso/boot/grub
         cp linux-6.18/arch/x86/boot/bzImage iso/boot/vmlinuz
         cp rootfs.cpio iso/boot/initramfs.cpio
-        cat > iso/boot/grub/grub.cfg << EOF
-set default=0
-set timeout=3
-menuentry "GudaoUI Linux V1 with MicroPython" {
-  linux /boot/vmlinuz quiet console=tty0
-  initrd /boot/initramfs.cpio
-}
-menuentry "GudaoUI Linux V1 (Debug)" {
-  linux /boot/vmlinuz loglevel=7 console=tty0
-  initrd /boot/initramfs.cpio
-}
-EOF
+        # 使用 printf 写入 grub.cfg
+        printf '%s\n' \
+          'set default=0' \
+          'set timeout=3' \
+          'menuentry "GudaoUI Linux V1 with MicroPython" {' \
+          '  linux /boot/vmlinuz quiet console=tty0' \
+          '  initrd /boot/initramfs.cpio' \
+          '}' \
+          'menuentry "GudaoUI Linux V1 (Debug)" {' \
+          '  linux /boot/vmlinuz loglevel=7 console=tty0' \
+          '  initrd /boot/initramfs.cpio' \
+          '}' > iso/boot/grub/grub.cfg
         grub-mkrescue -o "$ISO_NAME" iso/
         echo "✅ ISO 创建完成: $ISO_NAME"
         echo "ISO 大小: $(du -h $ISO_NAME | cut -f1)"
