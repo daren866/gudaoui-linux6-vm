@@ -195,10 +195,10 @@ jobs:
         fi
         ls -lh busybox
 
-    # ===== MicroPython 构建（启用 SSL，依赖 mbedtls）=====
+    # ===== MicroPython 构建（启用 SSL，禁用 cryptolib 以解决编译错误）=====
     - name: Build MicroPython from source
       run: |
-        echo "🐍 从源码编译 MicroPython x64（启用 SSL 支持）..."
+        echo "🐍 从源码编译 MicroPython x64（启用 SSL，禁用 cryptolib）..."
 
         # 创建目标目录
         mkdir -p python-root/usr/local/bin
@@ -222,17 +222,17 @@ jobs:
         # 进入 Unix 端口目录
         cd ports/unix
         
-        # 移除可能存在的旧配置文件，启用 SSL 和加密功能（在命令行中指定）
+        # 移除可能存在的旧配置文件
         rm -f mpconfigport.mk
         
-        echo "📝 使用启用 SSL 的配置编译..."
+        echo "📝 使用配置编译（SSL 启用，cryptolib 禁用）..."
         
-        # 编译 Unix 版本的 MicroPython（静态编译，启用 SSL 和加密）
+        # 编译 Unix 版本的 MicroPython（静态编译，启用 SSL，禁用 cryptolib）
         make -j$(nproc) \
-          CFLAGS_EXTRA="-static" \
+          CFLAGS_EXTRA="-static -I../../lib/mbedtls/include" \
           MICROPY_PY_BTREE=0 \
           MICROPY_PY_SSL=1 \
-          MICROPY_PY_CRYPTOLIB=1 \
+          MICROPY_PY_CRYPTOLIB=0 \
           MICROPY_PY_HASHLIB=1 \
           MICROPY_PY_TERMIOS=1 \
           MICROPY_PY_SOCKET=1 \
@@ -624,16 +624,6 @@ jobs:
           reboot - 重启系统
           poweroff - 关闭系统
 
-          ### 🐍 MicroPython 测试
-          进入 MicroPython REPL
-          python
-
-          运行 Python 代码
-          python -c "print('Hello, World!')"
-
-          查看版本
-          python --version
-
           ### 🔒 新增功能
           本次构建**启用了 SSL 和加密库**，MicroPython 可支持 HTTPS 等操作（依赖 mbedtls，静态链接）。
 
@@ -648,8 +638,7 @@ jobs:
           - 构建时间: $(date '+%Y-%m-%d %H:%M:%S')
           - ISO 大小: $(du -h ${{ steps.set-release-info.outputs.iso_name }} | cut -f1)
           - MicroPython 大小: ~300KB (静态链接，包含 SSL)
-        files: |
-          ${{ steps.set-release-info.outputs.iso_name }}
+        files: ${{ steps.set-release-info.outputs.iso_name }}
         draft: false
         prerelease: false
       env:
