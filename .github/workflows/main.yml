@@ -1,4 +1,4 @@
-name: Build Linux Kernel 6.18 with BusyBox
+name: Build Linux Kernel 6.18 with BusyBox (SquashFS + Overlay)
 
 on:
   push:
@@ -96,7 +96,8 @@ jobs:
           mtools \
           dosfstools \
           git \
-          pkg-config
+          pkg-config \
+          squashfs-tools
 
     - name: Download kernel source
       if: steps.kernel-cache.outputs.cache-hit != 'true'
@@ -198,8 +199,8 @@ jobs:
       run: |
         echo "🐍 从源码编译 MicroPython x64（轻量版，禁用SSL/btree）..."
 
-        # 创建目标目录
-        mkdir -p python-root/usr/bin
+        # 创建目标目录（安装到 /usr/local/bin）
+        mkdir -p python-root/usr/local/bin
         mkdir -p python-root/home
 
         # 克隆 MicroPython 源码
@@ -243,18 +244,18 @@ jobs:
         
         # 复制生成的可执行文件（可能位于 build-standard/micropython）
         if [ -f "micropython" ]; then
-            cp micropython ../../../python-root/usr/bin/
+            cp micropython ../../../python-root/usr/local/bin/
         elif [ -f "build-standard/micropython" ]; then
-            cp build-standard/micropython ../../../python-root/usr/bin/
+            cp build-standard/micropython ../../../python-root/usr/local/bin/
         else
             echo "❌ MicroPython 编译失败: 找不到 micropython 可执行文件"
             exit 1
         fi
         
         # 验证复制结果
-        if [ -f "../../../python-root/usr/bin/micropython" ]; then
+        if [ -f "../../../python-root/usr/local/bin/micropython" ]; then
             echo "✅ MicroPython 编译成功"
-            file ../../../python-root/usr/bin/micropython
+            file ../../../python-root/usr/local/bin/micropython
         else
             echo "❌ MicroPython 编译失败"
             exit 1
@@ -280,48 +281,50 @@ jobs:
           > python-root/home/test.py
         chmod +x python-root/home/test.py
         
-        # 创建符号链接
-        cd python-root/usr/bin
+        # 在 /usr/local/bin 中创建符号链接
+        cd python-root/usr/local/bin
         ln -sf micropython python
         ln -sf micropython python3
-        cd ../../..
+        cd ../../../..
         
         echo "✅ MicroPython 编译完成"
-        echo "MicroPython 二进制大小: $(du -h python-root/usr/bin/micropython | cut -f1)"
-        echo "Python 命令路径: $(ls -la python-root/usr/bin/python*)"
+        echo "MicroPython 二进制大小: $(du -h python-root/usr/local/bin/micropython | cut -f1)"
+        echo "Python 命令路径: $(ls -la python-root/usr/local/bin/python*)"
 
-    - name: Create rootfs
+    - name: Create rootfs (to be squashfs)
       run: |
-        echo "📦 创建 rootfs..."
-        mkdir -p rootfs/{bin,sbin,usr/bin,usr/sbin,etc,proc,sys,dev,lib,lib64,tmp,var,run,root,usr/local/bin,usr/lib,home}
+        echo "📦 创建 rootfs 目录（将用于 squashfs）..."
+        mkdir -p rootfs/{bin,sbin,usr/bin,usr/sbin,usr/local/bin,etc,proc,sys,dev,lib,lib64,tmp,var,run,root,home}
         cp -a busybox-1.36.1/_install/* rootfs/
         cp -a python-root/* rootfs/
         
-        # 将 MicroPython 二进制文件设置为只读（放入只读层）
-        if [ -f "rootfs/usr/bin/micropython" ]; then
-            chmod 555 rootfs/usr/bin/micropython
-            echo "✅ MicroPython 已设置为只读"
+        # 确保 /usr/local/bin/micropython 存在，并设置只读权限（虽然是 squashfs，但保留权限）
+        if [ -f "rootfs/usr/local/bin/micropython" ]; then
+            chmod 555 rootfs/usr/local/bin/micropython
+            echo "✅ MicroPython 已设置为只读权限"
         fi
         
-        cd rootfs/usr/bin
+        cd rootfs/usr/local/bin
+        # 重新检查并创建符号链接（确保）
         if [ -f "micropython" ] && [ ! -L "python" ]; then
           ln -sf micropython python
           ln -sf micropython python3
         fi
-        cd ../../..
+        cd ../../../..
         
         mkdir -p rootfs/etc/profile.d
-        printf '%s\n' 'export PATH=/usr/bin:$PATH' > rootfs/etc/profile.d/python.sh
+        printf '%s\n' 'export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin' > rootfs/etc/profile.d/python.sh
         chmod +x rootfs/etc/profile.d/python.sh
         
-        sudo mknod -m 666 rootfs/dev/null c 1 3
-        sudo mknod -m 644 rootfs/dev/console c 5 1
-        sudo mknod -m 660 rootfs/dev/tty1 c 4 1
-        sudo mknod -m 660 rootfs/dev/tty2 c 4 2
-        sudo mknod -m 660 rootfs/dev/tty3 c 4 3
-        sudo mknod -m 660 rootfs/dev/tty4 c 4 4
+        # 创建基本的设备节点（用于初始根，虽然 squashfs 中可能不需要，但保留）
+        sudo mknod -m 666 rootfs/dev/null c 1 3 || true
+        sudo mknod -m 644 rootfs/dev/console c 5 1 || true
+        sudo mknod -m 660 rootfs/dev/tty1 c 4 1 || true
+        sudo mknod -m 660 rootfs/dev/tty2 c 4 2 || true
+        sudo mknod -m 660 rootfs/dev/tty3 c 4 3 || true
+        sudo mknod -m 660 rootfs/dev/tty4 c 4 4 || true
         
-        # about 脚本
+        # about 脚本（使用 /usr/local/bin）
         printf '%s\n' \
           '#!/bin/sh' \
           'echo "====================="' \
@@ -380,17 +383,18 @@ jobs:
           '/bin/busybox poweroff -f' > rootfs/usr/local/bin/poweroff
         chmod +x rootfs/usr/local/bin/poweroff
         
+        # 在 /usr/bin 中创建符号链接到 /usr/local/bin 的命令（可选）
         cd rootfs/usr/bin
-        ln -sf ../local/bin/about about
-        ln -sf ../local/bin/calc calc
-        ln -sf ../local/bin/reboot reboot
-        ln -sf ../local/bin/poweroff poweroff
-        ln -sf poweroff halt
+        ln -sf ../local/bin/about about || true
+        ln -sf ../local/bin/calc calc || true
+        ln -sf ../local/bin/reboot reboot || true
+        ln -sf ../local/bin/poweroff poweroff || true
+        ln -sf poweroff halt || true
         cd ../../..
         
-        # init 脚本
+        # init 脚本（最终根文件系统的 init，由 overlay 后的根使用）
         printf '%s\n' \
-          '#!/bin/busybox sh' \
+          '#!/bin/sh' \
           'export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin' \
           'export TERM=linux' \
           '/bin/busybox mount -t proc none /proc' \
@@ -432,12 +436,13 @@ jobs:
           'exec /bin/sh' > rootfs/init
         chmod +x rootfs/init
         
+        # 基础配置文件
         echo "root:x:0:0:root:/root:/bin/sh" > rootfs/etc/passwd
         echo "root:x:0:" > rootfs/etc/group
         echo "nameserver 8.8.8.8" > rootfs/etc/resolv.conf
         echo "127.0.0.1 localhost gudao-ui" > rootfs/etc/hosts
         
-        # fstab 文件
+        # fstab 文件（实际不会被使用，因为根是 squashfs+overlay，但保留）
         printf '%s\n' \
           'proc    /proc    proc    defaults    0 0' \
           'sysfs   /sys     sysfs   defaults    0 0' \
@@ -453,32 +458,120 @@ jobs:
           'alias ll='\''ls -la'\' \
           'alias python='\''micropython'\' > rootfs/etc/profile
         
-        cd rootfs
-        find . | cpio -o -H newc > ../rootfs.cpio
-        cd ..
+        echo "rootfs 准备完成，大小: $(du -sh rootfs | cut -f1)"
+
+    - name: Create squashfs from rootfs
+      run: |
+        echo "🗜️ 创建 squashfs 镜像..."
+        mksquashfs rootfs rootfs.squashfs -comp xz -b 1M
+        echo "✅ squashfs 创建完成: $(du -h rootfs.squashfs | cut -f1)"
+
+    - name: Build initramfs for overlay boot
+      run: |
+        echo "🛠️ 构建 initramfs（用于挂载 squashfs 和 overlay）..."
+        mkdir -p initramfs/{bin,dev,etc,proc,root,sys,mnt/iso,mnt/root,mnt/overlay,mnt/work,newroot}
         
-        echo "rootfs.cpio 大小: $(du -h rootfs.cpio | cut -f1)"
-        echo "MicroPython 二进制大小: $(du -h rootfs/usr/bin/micropython | cut -f1)"
-        echo "验证 python 命令: $(ls -la rootfs/usr/bin/python* || echo 'Python symlink missing')"
+        # 复制静态编译的 BusyBox（从 busybox-1.36.1/_install）
+        cp -a busybox-1.36.1/_install/* initramfs/
+        
+        # 创建必要的设备节点
+        sudo mknod -m 600 initramfs/dev/console c 5 1 || true
+        sudo mknod -m 666 initramfs/dev/null c 1 3 || true
+        sudo mknod -m 660 initramfs/dev/tty1 c 4 1 || true
+        sudo mknod -m 660 initramfs/dev/tty2 c 4 2 || true
+        sudo mknod -m 660 initramfs/dev/tty3 c 4 3 || true
+        sudo mknod -m 660 initramfs/dev/tty4 c 4 4 || true
+        
+        # 创建 init 脚本
+        cat > initramfs/init << 'EOF'
+#!/bin/sh
+
+# 挂载必要的文件系统
+mount -t proc none /proc
+mount -t sysfs none /sys
+mount -t devtmpfs none /dev
+
+# 打印启动信息
+echo "GudaoUI Linux - Booting from squashfs with overlay..."
+
+# 尝试找到包含 rootfs.squashfs 的设备（通常是 CD-ROM /dev/sr0）
+# 这里假设 squashfs 文件位于 ISO 的根目录，我们挂载 ISO 到 /mnt/iso
+# 扫描可能的设备（简单起见，直接尝试 /dev/sr0）
+mkdir -p /mnt/iso
+if mount -t iso9660 /dev/sr0 /mnt/iso 2>/dev/null; then
+    echo "Mounted ISO from /dev/sr0"
+elif mount -t iso9660 /dev/sr1 /mnt/iso 2>/dev/null; then
+    echo "Mounted ISO from /dev/sr1"
+else
+    echo "Failed to mount ISO. Trying all block devices..."
+    # 更复杂的扫描（可选）
+    for dev in /dev/sr* /dev/hd* /dev/sd*; do
+        [ -e "$dev" ] || continue
+        if mount -t iso9660 "$dev" /mnt/iso 2>/dev/null; then
+            echo "Mounted ISO from $dev"
+            break
+        fi
+    done
+fi
+
+# 检查 squashfs 文件是否存在
+if [ ! -f /mnt/iso/rootfs.squashfs ]; then
+    echo "ERROR: rootfs.squashfs not found on ISO!"
+    exec sh
+fi
+
+# 挂载 squashfs（只读）到 /mnt/root
+mount -t squashfs -o ro,loop /mnt/iso/rootfs.squashfs /mnt/root || {
+    echo "ERROR: Failed to mount squashfs"
+    exec sh
+}
+
+# 创建 overlay 所需的目录
+mkdir -p /mnt/overlay /mnt/work
+
+# 挂载 tmpfs 作为上层
+mount -t tmpfs tmpfs /mnt/overlay
+
+# 使用 overlay 合并只读 squashfs 和可写 tmpfs
+mount -t overlay overlay -o lowerdir=/mnt/root,upperdir=/mnt/overlay,workdir=/mnt/work /newroot || {
+    echo "ERROR: Failed to mount overlay"
+    exec sh
+}
+
+# 清理并切换到新根
+umount /proc /sys /dev 2>/dev/null
+exec switch_root /newroot /init
+EOF
+        chmod +x initramfs/init
+        
+        # 打包 initramfs
+        cd initramfs
+        find . | cpio -o -H newc | gzip > ../initramfs.cpio.gz
+        cd ..
+        echo "✅ initramfs 创建完成: $(du -h initramfs.cpio.gz | cut -f1)"
 
     - name: Create bootable ISO
       run: |
         echo "💿 创建启动 ISO..."
         mkdir -p iso/boot/grub
         cp linux-6.18/arch/x86/boot/bzImage iso/boot/vmlinuz
-        cp rootfs.cpio iso/boot/initramfs.cpio
-        # 使用 printf 写入 grub.cfg
-        printf '%s\n' \
-          'set default=0' \
-          'set timeout=3' \
-          'menuentry "GudaoUI Linux V1 with MicroPython" {' \
-          '  linux /boot/vmlinuz quiet console=tty0' \
-          '  initrd /boot/initramfs.cpio' \
-          '}' \
-          'menuentry "GudaoUI Linux V1 (Debug)" {' \
-          '  linux /boot/vmlinuz loglevel=7 console=tty0' \
-          '  initrd /boot/initramfs.cpio' \
-          '}' > iso/boot/grub/grub.cfg
+        cp initramfs.cpio.gz iso/boot/initramfs.cpio.gz
+        cp rootfs.squashfs iso/boot/rootfs.squashfs  # 将 squashfs 放入 ISO 中
+        
+        # 创建 GRUB 配置文件
+        cat > iso/boot/grub/grub.cfg << EOF
+set default=0
+set timeout=3
+menuentry "GudaoUI Linux V1 with MicroPython (SquashFS+Overlay)" {
+  linux /boot/vmlinuz quiet
+  initrd /boot/initramfs.cpio.gz
+}
+menuentry "GudaoUI Linux V1 (Debug)" {
+  linux /boot/vmlinuz loglevel=7
+  initrd /boot/initramfs.cpio.gz
+}
+EOF
+        
         grub-mkrescue -o "$ISO_NAME" iso/
         echo "✅ ISO 创建完成: $ISO_NAME"
         echo "ISO 大小: $(du -h $ISO_NAME | cut -f1)"
@@ -496,12 +589,12 @@ jobs:
         name: ${{ steps.set-release-info.outputs.release_title }}
         tag_name: ${{ steps.set-release-info.outputs.release_tag }}
         body: |
-          ## 🎉 GudaoUI Linux V1 with MicroPython
+          ## 🎉 GudaoUI Linux V1 with MicroPython (SquashFS + Overlay)
           
           ### 📦 包含组件
           - Linux 内核 6.18 (虚拟机优化版)
           - BusyBox 1.36.1 (静态编译)
-          - **MicroPython v1.24.1** (从源码编译，静态链接，禁用SSL/btree以减小体积，且设置为只读)
+          - **MicroPython v1.24.1** (从源码编译，静态链接，位于只读 squashfs 层)
           
           ### 💻 可用命令
           about - 显示系统信息
@@ -522,11 +615,15 @@ jobs:
 
           ### ⚡ 虚拟机优化
           已启用 VirtIO 驱动和 ACPI 电源管理
+          
+          ### 📀 文件系统架构
+          - 根文件系统为只读 squashfs，通过 overlayfs 与 tmpfs 合并，实现可写运行时环境
+          - MicroPython 位于只读层，确保其二进制不被意外修改
 
           ### 📊 构建信息
           - 构建时间: $(date '+%Y-%m-%d %H:%M:%S')
           - ISO 大小: $(du -h ${{ steps.set-release-info.outputs.iso_name }} | cut -f1)
-          - MicroPython 大小: ~200KB (静态编译，只读)
+          - MicroPython 大小: ~200KB (静态编译)
         files: |
           ${{ steps.set-release-info.outputs.iso_name }}
         draft: false
