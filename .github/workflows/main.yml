@@ -195,10 +195,10 @@ jobs:
         fi
         ls -lh busybox
 
-    # ===== MicroPython 构建（启用 SSL，禁用 cryptolib，通过配置文件确保）=====
+    # ===== MicroPython 构建（强制禁用 cryptolib，仅启用 SSL 和 hashlib）=====
     - name: Build MicroPython from source
       run: |
-        echo "🐍 从源码编译 MicroPython x64（启用 SSL，禁用 cryptolib）..."
+        echo "🐍 从源码编译 MicroPython x64（强制禁用 cryptolib）..."
 
         # 创建目标目录
         mkdir -p python-root/usr/local/bin
@@ -222,25 +222,33 @@ jobs:
         # 进入 Unix 端口目录
         cd ports/unix
         
-        # 创建 mpconfigport.mk 文件，明确配置
+        # 使用 printf 写入 mpconfigport.mk（避免 heredoc 缩进问题）
         echo "📝 写入 mpconfigport.mk 配置..."
-        cat > mpconfigport.mk << 'EOF'
-        # 模块配置
-        MICROPY_PY_BTREE = 0
-        MICROPY_PY_SSL = 1
-        MICROPY_PY_CRYPTOLIB = 0
-        MICROPY_PY_HASHLIB = 1
-        MICROPY_PY_TERMIOS = 1
-        MICROPY_PY_SOCKET = 1
-        MICROPY_PY_FFI = 0
-        MICROPY_PY_THREAD = 0
-        MICROPY_USE_READLINE = 1
-        EOF
+        printf '%s\n' \
+          '# 模块配置 - 强制禁用 cryptolib' \
+          'MICROPY_PY_BTREE = 0' \
+          'MICROPY_PY_SSL = 1' \
+          'MICROPY_PY_CRYPTOLIB = 0' \
+          'MICROPY_PY_HASHLIB = 1' \
+          'MICROPY_PY_TERMIOS = 1' \
+          'MICROPY_PY_SOCKET = 1' \
+          'MICROPY_PY_FFI = 0' \
+          'MICROPY_PY_THREAD = 0' \
+          'MICROPY_USE_READLINE = 1' > mpconfigport.mk
         
-        echo "🔨 编译 MicroPython（静态编译，启用 SSL）..."
-        # 编译 Unix 版本的 MicroPython
+        # 同时修改 variants/standard/mpconfigvariant.h（如果存在），确保 cryptolib 被禁用
+        if [ -f "variants/standard/mpconfigvariant.h" ]; then
+          echo "📝 修改 variants/standard/mpconfigvariant.h 禁用 cryptolib..."
+          sed -i '/MICROPY_PY_CRYPTOLIB/d' variants/standard/mpconfigvariant.h
+          echo "#undef MICROPY_PY_CRYPTOLIB" >> variants/standard/mpconfigvariant.h
+          echo "#define MICROPY_PY_CRYPTOLIB (0)" >> variants/standard/mpconfigvariant.h
+        fi
+        
+        echo "🔨 编译 MicroPython（静态编译，启用 SSL，强制禁用 cryptolib）..."
+        # 编译 Unix 版本的 MicroPython，通过命令行参数再次强制覆盖
         make -j$(nproc) \
-          CFLAGS_EXTRA="-static -I../../lib/mbedtls/include"
+          CFLAGS_EXTRA="-static -I../../lib/mbedtls/include" \
+          MICROPY_PY_CRYPTOLIB=0
         
         # 复制生成的可执行文件
         if [ -f "micropython" ]; then
