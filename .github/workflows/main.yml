@@ -115,7 +115,8 @@ jobs:
           dosfstools \
           python3 \
           squashfs-tools \
-          libffi-dev
+          libffi-dev \
+          git   # 添加 git，用于克隆 MicroPython
 
     # ===== 内核部分 =====
     - name: Download kernel source
@@ -220,15 +221,15 @@ jobs:
         fi
         ls -lh busybox
 
-    # ===== MicroPython 部分 =====
-    - name: Download MicroPython source
+    # ===== MicroPython 部分（修复：使用 git clone 并初始化子模块）=====
+    - name: Clone MicroPython source
       if: steps.micropython-cache.outputs.cache-hit != 'true'
       run: |
-        echo "📥 下载 MicroPython 源码..."
-        wget -q https://github.com/micropython/micropython/archive/refs/tags/v1.24.1.tar.gz
-        tar -xzf v1.24.1.tar.gz
-        mv micropython-1.24.1 micropython
-        echo "✅ MicroPython 下载完成"
+        echo "📥 克隆 MicroPython 源码（包含子模块）..."
+        git clone --depth 1 --branch v1.24.1 https://github.com/micropython/micropython.git micropython
+        cd micropython
+        git submodule update --init --depth 1
+        echo "✅ MicroPython 克隆完成"
 
     - name: Build MicroPython
       run: |
