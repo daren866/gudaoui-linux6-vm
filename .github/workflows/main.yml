@@ -225,17 +225,17 @@ jobs:
         # 创建 mpconfigport.mk 文件，明确配置
         echo "📝 写入 mpconfigport.mk 配置..."
         cat > mpconfigport.mk << 'EOF'
-# 模块配置
-MICROPY_PY_BTREE = 0
-MICROPY_PY_SSL = 1
-MICROPY_PY_CRYPTOLIB = 0
-MICROPY_PY_HASHLIB = 1
-MICROPY_PY_TERMIOS = 1
-MICROPY_PY_SOCKET = 1
-MICROPY_PY_FFI = 0
-MICROPY_PY_THREAD = 0
-MICROPY_USE_READLINE = 1
-EOF
+        # 模块配置
+        MICROPY_PY_BTREE = 0
+        MICROPY_PY_SSL = 1
+        MICROPY_PY_CRYPTOLIB = 0
+        MICROPY_PY_HASHLIB = 1
+        MICROPY_PY_TERMIOS = 1
+        MICROPY_PY_SOCKET = 1
+        MICROPY_PY_FFI = 0
+        MICROPY_PY_THREAD = 0
+        MICROPY_USE_READLINE = 1
+        EOF
         
         echo "🔨 编译 MicroPython（静态编译，启用 SSL）..."
         # 编译 Unix 版本的 MicroPython
@@ -244,21 +244,21 @@ EOF
         
         # 复制生成的可执行文件
         if [ -f "micropython" ]; then
-            cp micropython ../../../python-root/usr/local/bin/
+          cp micropython ../../../python-root/usr/local/bin/
         elif [ -f "build-standard/micropython" ]; then
-            cp build-standard/micropython ../../../python-root/usr/local/bin/
+          cp build-standard/micropython ../../../python-root/usr/local/bin/
         else
-            echo "❌ MicroPython 编译失败: 找不到 micropython 可执行文件"
-            exit 1
+          echo "❌ MicroPython 编译失败: 找不到 micropython 可执行文件"
+          exit 1
         fi
         
         # 验证复制结果
         if [ -f "../../../python-root/usr/local/bin/micropython" ]; then
-            echo "✅ MicroPython 编译成功"
-            file ../../../python-root/usr/local/bin/micropython
+          echo "✅ MicroPython 编译成功"
+          file ../../../python-root/usr/local/bin/micropython
         else
-            echo "❌ MicroPython 编译失败"
-            exit 1
+          echo "❌ MicroPython 编译失败"
+          exit 1
         fi
         
         cd ../../..
@@ -300,8 +300,8 @@ EOF
         
         # 确保 /usr/local/bin/micropython 存在
         if [ ! -f "rootfs/usr/local/bin/micropython" ]; then
-            echo "❌ MicroPython binary not found in rootfs!"
-            exit 1
+          echo "❌ MicroPython binary not found in rootfs!"
+          exit 1
         fi
         echo "✅ MicroPython binary found in rootfs: $(file rootfs/usr/local/bin/micropython)"
         
