@@ -130,17 +130,74 @@ jobs:
           else
             make defconfig
           fi
-          echo "🔧 应用虚拟机优化..."
+          echo "🔧 应用虚拟机优化（添加 VBox、VMware、QEMU 网卡和声卡驱动）..."
+
+          # 基础虚拟化驱动
           scripts/config --enable VIRTIO
           scripts/config --enable VIRTIO_PCI
           scripts/config --enable VIRTIO_BLK
           scripts/config --enable VIRTIO_NET
+          scripts/config --enable VIRTIO_CONSOLE
+          scripts/config --enable VIRTIO_BALLOON
+          scripts/config --enable VIRTIO_INPUT
+          scripts/config --enable VIRTIO_MMIO
+
+          # VMware 驱动
           scripts/config --enable VMXNET3
-          scripts/config --enable E1000
           scripts/config --enable DRM_VMWGFX
-          scripts/config --disable SOUND
-          scripts/config --disable USB_SUPPORT
-          scripts/config --disable WLAN
+          scripts/config --enable VMWARE_BALLOON
+          scripts/config --enable VMWARE_VMCI
+          scripts/config --enable VMWARE_VMCI_VSOCKETS
+          scripts/config --enable VMWARE_PVSCSI
+
+          # VirtualBox 驱动
+          scripts/config --enable VBOXGUEST
+          scripts/config --enable DRM_VBOXVIDEO
+          scripts/config --enable VBOXSF_FS
+
+          # QEMU 驱动
+          scripts/config --enable E1000
+          scripts/config --enable E1000E
+          scripts/config --enable RTL8139
+          scripts/config --enable PCNET32
+          scripts/config --enable NE2K_PCI
+          scripts/config --enable 8139TOO
+
+          # 声卡驱动（启用通用声音架构）
+          scripts/config --enable SOUND
+          scripts/config --enable SND
+          scripts/config --enable SND_PCI
+
+          # AC97 声卡（QEMU 默认）
+          scripts/config --enable SND_AC97_CODEC
+          scripts/config --enable SND_INTEL8X0
+          scripts/config --enable SND_INTEL8X0M
+
+          # Intel HDA 声卡（现代虚拟机）
+          scripts/config --enable SND_HDA_INTEL
+          scripts/config --enable SND_HDA_CODEC_REALTEK
+          scripts/config --enable SND_HDA_CODEC_HDMI
+          scripts/config --enable SND_HDA_CODEC_GENERIC
+
+          # 其他常见声卡
+          scripts/config --enable SND_SB16
+          scripts/config --enable SND_SB8
+          scripts/config --enable SND_SBAWE
+          scripts/config --enable SND_SB16_CSP
+          scripts/config --enable SND_ENS1370
+          scripts/config --enable SND_ENS1371
+
+          # 启用声音核心功能
+          scripts/config --enable SND_DYNAMIC_MINORS
+          scripts/config --enable SND_VERBOSE_PRINTK
+          scripts/config --enable SND_DEBUG
+
+          # USB 支持（某些虚拟机需要 USB 声卡）
+          scripts/config --enable USB_SUPPORT
+          scripts/config --enable USB
+          scripts/config --enable USB_AUDIO
+
+          # 电源管理
           scripts/config --enable POWER_SUPPLY
           scripts/config --enable SUSPEND
           scripts/config --enable HIBERNATION
@@ -149,6 +206,17 @@ jobs:
           scripts/config --enable ACPI_POWER_METER
           scripts/config --enable ACPI_PROC_EVENT
           scripts/config --enable ACPI_SYSTEM_POWER_STATES_SUPPORT
+
+          # 禁用不必要的驱动以减小内核大小
+          scripts/config --disable WLAN
+          scripts/config --disable BLUETOOTH
+          scripts/config --disable RFKILL
+          scripts/config --disable IWLWIFI
+          scripts/config --disable ATH9K
+          scripts/config --disable B43
+          scripts/config --disable BCMA
+          scripts/config --disable SSB
+
           make olddefconfig
 
       - name: Build kernel
@@ -641,7 +709,7 @@ jobs:
             ## 🎉 GudaoUI Linux V1 with MicroPython (SquashFS + Overlay)
 
             ### 📦 包含组件
-            - Linux 内核 6.18 (虚拟机优化版)
+            - Linux 内核 6.18 (虚拟机优化版，包含 VBox/VMware/QEMU 驱动)
             - BusyBox 1.36.1 (静态编译)
             - **MicroPython v1.24.1** (从源码编译，静态链接，**启用 SSL 和加密库支持**)
 
@@ -652,11 +720,17 @@ jobs:
             reboot - 重启系统
             poweroff - 关闭系统
 
+            ### 🔌 虚拟机驱动支持
+            - **VirtualBox**: 网卡、显卡、共享文件夹
+            - **VMware**: VMXNET3 网卡、PVSCSI 存储、VMCI 通信
+            - **QEMU**: VirtIO 全系列、E1000/E1000E、AC97/HDA 声卡
+            - **通用**: Intel HDA 声卡、AC97 声卡、多种 PCI 网卡
+
             ### 🔒 新增功能
             本次构建**启用了 SSL 和加密库**，MicroPython 可支持 HTTPS 等操作（依赖系统 mbedtls，静态链接）。
 
             ### ⚡ 虚拟机优化
-            已启用 VirtIO 驱动和 ACPI 电源管理
+            已启用 VirtIO 驱动、ACPI 电源管理和全系列声卡支持
 
             ### 📀 文件系统架构
             - 根文件系统为只读 squashfs，通过 overlayfs 与 tmpfs 合并，实现可写运行时环境
