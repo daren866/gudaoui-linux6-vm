@@ -482,7 +482,7 @@ jobs:
         sudo mknod -m 660 initramfs/dev/tty3 c 4 3 || true
         sudo mknod -m 660 initramfs/dev/tty4 c 4 4 || true
         
-        # 使用 printf 创建 init 脚本，避免 heredoc 缩进问题
+        # 创建更完善的 init 脚本，增强设备扫描并修正 squashfs 路径
         printf '%s\n' \
           '#!/bin/sh' \
           '' \
@@ -491,37 +491,44 @@ jobs:
           'mount -t sysfs none /sys' \
           'mount -t devtmpfs none /dev' \
           '' \
+          '# 等待设备初始化' \
+          'sleep 1' \
+          '' \
           '# 打印启动信息' \
           'echo "GudaoUI Linux - Booting from squashfs with overlay..."' \
           '' \
-          '# 尝试找到包含 rootfs.squashfs 的设备（通常是 CD-ROM /dev/sr0）' \
-          '# 这里假设 squashfs 文件位于 ISO 的根目录，我们挂载 ISO 到 /mnt/iso' \
-          '# 扫描可能的设备（简单起见，直接尝试 /dev/sr0）' \
+          '# 创建挂载点' \
           'mkdir -p /mnt/iso' \
-          'if mount -t iso9660 /dev/sr0 /mnt/iso 2>/dev/null; then' \
-          '    echo "Mounted ISO from /dev/sr0"' \
-          'elif mount -t iso9660 /dev/sr1 /mnt/iso 2>/dev/null; then' \
-          '    echo "Mounted ISO from /dev/sr1"' \
-          'else' \
-          '    echo "Failed to mount ISO. Trying all block devices..."' \
-          '    # 更复杂的扫描（可选）' \
-          '    for dev in /dev/sr* /dev/hd* /dev/sd*; do' \
-          '        [ -e "$dev" ] || continue' \
-          '        if mount -t iso9660 "$dev" /mnt/iso 2>/dev/null; then' \
-          '            echo "Mounted ISO from $dev"' \
-          '            break' \
-          '        fi' \
-          '    done' \
+          '' \
+          '# 尝试找到包含 rootfs.squashfs 的设备' \
+          'ISO_MOUNTED=0' \
+          'for dev in /dev/sr* /dev/hd* /dev/sd*; do' \
+          '    [ -e "$dev" ] || continue' \
+          '    echo "Trying to mount $dev as ISO9660..."' \
+          '    if mount -t iso9660 "$dev" /mnt/iso 2>/dev/null; then' \
+          '        echo "Successfully mounted $dev on /mnt/iso"' \
+          '        ISO_MOUNTED=1' \
+          '        break' \
+          '    fi' \
+          'done' \
+          '' \
+          'if [ $ISO_MOUNTED -eq 0 ]; then' \
+          '    echo "ERROR: Could not mount any device as ISO9660!"' \
+          '    exec sh' \
           'fi' \
           '' \
-          '# 检查 squashfs 文件是否存在' \
-          'if [ ! -f /mnt/iso/rootfs.squashfs ]; then' \
-          '    echo "ERROR: rootfs.squashfs not found on ISO!"' \
+          '# 检查 squashfs 文件是否存在（位于 /boot/ 目录下）' \
+          'if [ ! -f /mnt/iso/boot/rootfs.squashfs ]; then' \
+          '    echo "ERROR: /boot/rootfs.squashfs not found on ISO!"' \
+          '    echo "Contents of /mnt/iso:"' \
+          '    ls -la /mnt/iso' \
+          '    echo "Contents of /mnt/iso/boot (if exists):"' \
+          '    ls -la /mnt/iso/boot 2>/dev/null || echo "/boot directory not found"' \
           '    exec sh' \
           'fi' \
           '' \
           '# 挂载 squashfs（只读）到 /mnt/root' \
-          'mount -t squashfs -o ro,loop /mnt/iso/rootfs.squashfs /mnt/root || {' \
+          'mount -t squashfs -o ro,loop /mnt/iso/boot/rootfs.squashfs /mnt/root || {' \
           '    echo "ERROR: Failed to mount squashfs"' \
           '    exec sh' \
           '}' \
@@ -555,7 +562,7 @@ jobs:
         mkdir -p iso/boot/grub
         cp linux-6.18/arch/x86/boot/bzImage iso/boot/vmlinuz
         cp initramfs.cpio.gz iso/boot/initramfs.cpio.gz
-        cp rootfs.squashfs iso/boot/rootfs.squashfs  # 将 squashfs 放入 ISO 中
+        cp rootfs.squashfs iso/boot/rootfs.squashfs  # 将 squashfs 放入 ISO 的 /boot/ 目录
         
         # 使用 printf 写入 grub.cfg，避免 heredoc 问题
         printf '%s\n' \
