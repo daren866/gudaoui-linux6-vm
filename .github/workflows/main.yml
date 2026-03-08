@@ -195,10 +195,10 @@ jobs:
         fi
         ls -lh busybox
 
-    # ===== MicroPython 构建（强制禁用 cryptolib，仅启用 SSL 和 hashlib）=====
+    # ===== MicroPython 构建（强制禁用 cryptolib，启用 SSL，强制使用 mbedtls）=====
     - name: Build MicroPython from source
       run: |
-        echo "🐍 从源码编译 MicroPython x64（强制禁用 cryptolib）..."
+        echo "🐍 从源码编译 MicroPython x64（强制禁用 cryptolib，启用 mbedtls）..."
 
         # 创建目标目录
         mkdir -p python-root/usr/local/bin
@@ -222,12 +222,13 @@ jobs:
         # 进入 Unix 端口目录
         cd ports/unix
         
-        # 使用 printf 写入 mpconfigport.mk（避免 heredoc 缩进问题）
+        # 使用 printf 写入 mpconfigport.mk（强制启用 mbedtls）
         echo "📝 写入 mpconfigport.mk 配置..."
         printf '%s\n' \
-          '# 模块配置 - 强制禁用 cryptolib' \
+          '# 模块配置 - 强制禁用 cryptolib，使用 mbedtls 提供 SSL 和哈希' \
           'MICROPY_PY_BTREE = 0' \
           'MICROPY_PY_SSL = 1' \
+          'MICROPY_SSL_MBEDTLS = 1' \
           'MICROPY_PY_CRYPTOLIB = 0' \
           'MICROPY_PY_HASHLIB = 1' \
           'MICROPY_PY_TERMIOS = 1' \
@@ -244,7 +245,7 @@ jobs:
           echo "#define MICROPY_PY_CRYPTOLIB (0)" >> variants/standard/mpconfigvariant.h
         fi
         
-        echo "🔨 编译 MicroPython（静态编译，启用 SSL，强制禁用 cryptolib）..."
+        echo "🔨 编译 MicroPython（静态编译，启用 SSL，强制禁用 cryptolib，使用 mbedtls）..."
         # 编译 Unix 版本的 MicroPython，通过命令行参数再次强制覆盖
         make -j$(nproc) \
           CFLAGS_EXTRA="-static -I../../lib/mbedtls/include" \
