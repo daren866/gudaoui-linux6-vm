@@ -40,16 +40,15 @@ jobs:
           echo "RELEASE_TITLE=$RELEASE_TITLE" >> $GITHUB_ENV
           echo "ISO_NAME=$ISO_NAME" >> $GITHUB_ENV
 
-      # ===== 缓存配置（已修改 key，强制使用新缓存）=====
+      # ===== 缓存配置（key 已升级，强制新编译）=====
       - name: Cache kernel build
         uses: actions/cache@v4
         id: kernel-cache
         with:
           path: linux-6.18
-          # 增加版本号 v3 以强制重新编译，确保新驱动被包含
-          key: kernel-6.18-v3-${{ hashFiles('6.18.x-x86_64-build.conf') }}
+          key: kernel-6.18-v4-${{ hashFiles('6.18.x-x86_64-build.conf') }}
           restore-keys: |
-            kernel-6.18-v3-
+            kernel-6.18-v4-
 
       - name: Cache busybox build
         uses: actions/cache@v4
@@ -120,7 +119,7 @@ jobs:
           tar -xf linux-6.18.tar.xz
           echo "✅ 内核源码下载完成"
 
-      # ===== 清理源码树（仅当需要编译时执行，确保全新编译）=====
+      # ===== 清理源码树（仅当需要编译时执行）=====
       - name: Clean kernel source tree for fresh build
         if: steps.kernel-cache.outputs.cache-hit != 'true'
         run: |
@@ -129,7 +128,7 @@ jobs:
           make mrproper
           echo "✅ 源码树已清理"
 
-      # ===== 修正后的内核配置（针对 x64 架构优化，确保 PCI 和 ACPI 基础支持）=====
+      # ===== 内核配置（始终执行，确保配置最新）=====
       - name: Configure kernel with full driver support (x86_64 optimized)
         run: |
           cd linux-6.18
@@ -145,18 +144,18 @@ jobs:
           CONFIG_X86_MSR=y
           CONFIG_X86_CPUID=y
           
-          # ========== PCI 核心支持 (x64 必须) ==========
+          # ========== PCI 核心支持 ==========
           CONFIG_PCI=y
           CONFIG_PCI_DIRECT=y
           CONFIG_PCI_MMCONFIG=y
           CONFIG_PCI_DOMAINS=y
-          CONFIG_PCI_MSI=y                     # 消息信号中断，现代设备必备
-          CONFIG_PCI_IOV=y                      # I/O 虚拟化（虚拟机场景需要）
-          CONFIG_PCI_PRI=y                       # PCI PRI 支持
-          CONFIG_PCI_PASID=y                    # PCI PASID 支持
-          CONFIG_PCI_QUIRKS=y                    # 处理硬件 quirks
+          CONFIG_PCI_MSI=y
+          CONFIG_PCI_IOV=y
+          CONFIG_PCI_PRI=y
+          CONFIG_PCI_PASID=y
+          CONFIG_PCI_QUIRKS=y
 
-          # ========== ACPI 支持 (x64 设备枚举的核心) ==========
+          # ========== ACPI 支持 ==========
           CONFIG_ACPI=y
           CONFIG_ACPI_TABLE_UPGRADE=y
           CONFIG_ACPI_DEBUGGER=y
@@ -174,23 +173,23 @@ jobs:
           CONFIG_ACPI_CONTAINER=y
           CONFIG_ACPI_HOTPLUG_MEMORY=y
           CONFIG_ACPI_HOTPLUG_IOAPIC=y
-          CONFIG_ACPI_SBS=m                      # 智能电池系统
-          CONFIG_ACPI_HED=y                      # 硬件错误设备
+          CONFIG_ACPI_SBS=m
+          CONFIG_ACPI_HED=y
           CONFIG_ACPI_CUSTOM_METHOD=y
-          CONFIG_ACPI_BGRT=y                      # 启动图形资源表
+          CONFIG_ACPI_BGRT=y
           CONFIG_ACPI_REDUCED_HARDWARE_ONLY=y
-          CONFIG_ACPI_NFIT=m                      # NVDIMM 固件接口表
+          CONFIG_ACPI_NFIT=m
           CONFIG_ACPI_NUMA=y
-          CONFIG_ACPI_HMAT=y                      # 异构内存属性表
+          CONFIG_ACPI_HMAT=y
           CONFIG_ACPI_PRMT=y
-          CONFIG_ACPI_APEI=y                      # ACPI 平台错误接口
+          CONFIG_ACPI_APEI=y
           CONFIG_ACPI_APEI_GHES=y
           CONFIG_ACPI_APEI_PCIEAER=y
           CONFIG_ACPI_APEI_MEMORY_FAILURE=y
           CONFIG_ACPI_APEI_EINJ=y
           CONFIG_ACPI_APEI_ERST_DEBUG=m
 
-          # ========== 声音支持 (x64 声卡驱动) ==========
+          # ========== 声音支持 ==========
           CONFIG_SOUND=y
           CONFIG_SND=y
           CONFIG_SND_TIMER=y
@@ -222,20 +221,20 @@ jobs:
           
           # PCI 声卡驱动
           CONFIG_SND_PCI=y
-          CONFIG_SND_HDA_INTEL=y                 # Intel HDA 声卡
+          CONFIG_SND_HDA_INTEL=y
           CONFIG_SND_HDA_PATCH_LOADER=y
           CONFIG_SND_HDA_CODEC_REALTEK=y
           CONFIG_SND_HDA_CODEC_HDMI=y
           CONFIG_SND_HDA_CODEC_GENERIC=y
           CONFIG_SND_HDA_INTEL_HDMI_SILENT=y
           CONFIG_SND_AC97_CODEC=y
-          CONFIG_SND_INTEL8X0=y                   # Intel AC97 声卡
-          CONFIG_SND_INTEL8X0M=y                  # Intel AC97 调制解调器
-          CONFIG_SND_SB16=y                        # Sound Blaster 16
+          CONFIG_SND_INTEL8X0=y
+          CONFIG_SND_INTEL8X0M=y
+          CONFIG_SND_SB16=y
           CONFIG_SND_SBAWE=m
           CONFIG_SND_SB16_CSP=y
-          CONFIG_SND_ENS1370=y                     # Ensoniq AudioPCI
-          CONFIG_SND_ENS1371=y                     # Ensoniq AudioPCI 97
+          CONFIG_SND_ENS1370=y
+          CONFIG_SND_ENS1371=y
           CONFIG_SND_VIA82XX=m
           CONFIG_SND_VIA82XX_MODEM=m
           CONFIG_SND_EMU10K1=m
@@ -264,8 +263,8 @@ jobs:
           CONFIG_SND_HDSP=m
           CONFIG_SND_HDSPM=m
           CONFIG_SND_ICE1712=m
-          CONFIG_SND_USB=y                         # USB 音频支持
-          CONFIG_SND_USB_AUDIO=m                    # USB 音频设备
+          CONFIG_SND_USB=y
+          CONFIG_SND_USB_AUDIO=m
           CONFIG_SND_USB_UA101=m
           CONFIG_SND_USB_USX2Y=m
           CONFIG_SND_USB_CAIAQ=m
@@ -286,23 +285,19 @@ jobs:
           CONFIG_8139TOO_8129=y
           CONFIG_PCNET32=y
           CONFIG_NE2K_PCI=y
-          CONFIG_TIGON3=y                           # Broadcom 千兆网卡
+          CONFIG_TIGON3=y
           CONFIG_BNX2=y
           CONFIG_BNX2X=y
-          
-          # Intel 网卡系列
-          CONFIG_IGB=y                               # Intel 千兆网卡
-          CONFIG_IGBVF=y                             # Intel 千兆网卡虚拟功能
-          CONFIG_IXGBE=y                             # Intel 万兆网卡
+          CONFIG_IGB=y
+          CONFIG_IGBVF=y
+          CONFIG_IXGBE=y
           CONFIG_IXGBEVF=y
-          CONFIG_I40E=y                              # Intel 40G 网卡
+          CONFIG_I40E=y
           CONFIG_I40EVF=y
-          CONFIG_ICE=y                               # Intel E810 系列
+          CONFIG_ICE=y
+          CONFIG_R8169=y
 
-          # Realtek 网卡系列
-          CONFIG_R8169=y                             # Realtek 8169 千兆网卡
-
-          # ========== VirtIO 驱动 (QEMU) ==========
+          # ========== VirtIO 驱动 ==========
           CONFIG_VIRTIO=y
           CONFIG_VIRTIO_PCI=y
           CONFIG_VIRTIO_PCI_LEGACY=y
@@ -368,16 +363,16 @@ jobs:
           CONFIG_OVERLAY_FS_XINO_AUTO=y
           CONFIG_OVERLAY_FS_METACOPY=y
 
-          # 禁用无线网络驱动以减小内核体积
+          # 禁用无线网络驱动
           # CONFIG_WLAN is not set
           # CONFIG_BLUETOOTH is not set
           # CONFIG_RFKILL is not set
           EOF
 
-          # 使用 olddefconfig 自动处理依赖关系
+          # 自动处理依赖关系
           make olddefconfig
 
-          # ===== 验证关键驱动配置是否启用 =====
+          # 验证关键驱动配置
           echo "🔍 验证关键驱动配置是否启用："
           grep -E "CONFIG_SND_HDA_INTEL=|CONFIG_E1000=|CONFIG_VMXNET3=" .config
 
@@ -388,17 +383,19 @@ jobs:
 
           echo "✅ x86_64 内核配置完成"
 
+      # ===== 内核编译（兼容增量编译）=====
       - name: Build kernel
         run: |
           cd linux-6.18
           if [ -f "arch/x86/boot/bzImage" ] && \
              [ "${{ steps.kernel-cache.outputs.cache-hit }}" == "true" ]; then
-            echo "✅ 使用缓存的内核，跳过编译"
-          else
-            echo "🔨 编译内核中（约 30 分钟）..."
-            start_time=$(date +%s)
-            make -j$(nproc) bzImage
+            echo "✅ 使用缓存的内核镜像，仅更新模块..."
+            # 只编译模块（增量更新）
             make -j$(nproc) modules
+          else
+            echo "🔨 完整编译内核和模块（约 30 分钟）..."
+            start_time=$(date +%s)
+            make -j$(nproc) bzImage modules
             end_time=$(date +%s)
             duration=$((end_time - start_time))
             echo "✅ 内核编译完成，耗时: $((duration / 60)) 分钟"
@@ -406,14 +403,14 @@ jobs:
           echo "内核位置: $(pwd)/arch/x86/boot/bzImage"
           ls -lh arch/x86/boot/bzImage
 
-      # ===== 安装内核模块到 rootfs =====
+      # ===== 安装内核模块到 rootfs（始终执行）=====
       - name: Install kernel modules to rootfs
         run: |
           echo "📦 安装内核模块到 rootfs/lib/modules ..."
-          # 创建 rootfs 目录（如果尚未创建）
+          # 确保 rootfs/lib/modules 目录存在
           mkdir -p rootfs/lib/modules
           cd linux-6.18
-          # 安装模块到指定目录
+          # 安装模块（如果模块未编译，make modules_install 会自动调用 make modules）
           make modules_install INSTALL_MOD_PATH=../rootfs
           cd ..
           echo "✅ 内核模块安装完成"
@@ -461,37 +458,23 @@ jobs:
           fi
           ls -lh busybox
 
-      # ===== MicroPython 构建（强制禁用 cryptolib，启用 SSL，强制使用系统 mbedtls）=====
+      # ===== MicroPython 构建 =====
       - name: Build MicroPython from source
         run: |
           echo "🐍 从源码编译 MicroPython x64（强制禁用 cryptolib，启用 mbedtls）..."
 
-          # 创建目标目录
           mkdir -p python-root/usr/local/bin
           mkdir -p python-root/home
 
-          # 克隆 MicroPython 源码
           git clone https://github.com/micropython/micropython.git
           cd micropython
-
-          # 切换到稳定版本（v1.24.1）
           git checkout v1.24.1
-
-          # 初始化所有子模块（包括 mbedtls）
-          echo "📦 初始化子模块..."
           git submodule update --init --recursive
-
-          # 编译 mpy-cross
-          echo "🔨 编译 mpy-cross..."
           make -C mpy-cross
-
-          # 进入 Unix 端口目录
           cd ports/unix
 
-          # 写入 mpconfigport.mk（强制启用 mbedtls）
-          echo "📝 写入 mpconfigport.mk 配置..."
           printf '%s\n' \
-            '# 模块配置 - 强制禁用 cryptolib，使用 mbedtls 提供 SSL 和哈希' \
+            '# 模块配置' \
             'MICROPY_PY_BTREE = 0' \
             'MICROPY_PY_SSL = 1' \
             'MICROPY_SSL_MBEDTLS = 1' \
@@ -503,35 +486,21 @@ jobs:
             'MICROPY_PY_THREAD = 0' \
             'MICROPY_USE_READLINE = 1' > mpconfigport.mk
 
-          # 同时修改 variants/standard/mpconfigvariant.h（如果存在）
           if [ -f "variants/standard/mpconfigvariant.h" ]; then
-            echo "📝 修改 variants/standard/mpconfigvariant.h 禁用 cryptolib..."
             sed -i '/MICROPY_PY_CRYPTOLIB/d' variants/standard/mpconfigvariant.h
             echo "#undef MICROPY_PY_CRYPTOLIB" >> variants/standard/mpconfigvariant.h
             echo "#define MICROPY_PY_CRYPTOLIB (0)" >> variants/standard/mpconfigvariant.h
           fi
 
-          echo "🔨 编译 MicroPython（静态编译，启用 SSL，强制禁用 cryptolib，使用系统 mbedtls）..."
-          # 编译 Unix 版本的 MicroPython，通过命令行参数再次强制覆盖
           make -j$(nproc) \
             CFLAGS_EXTRA="-static -I/usr/include/mbedtls" \
             LDFLAGS_EXTRA="-static" \
             MICROPY_PY_CRYPTOLIB=0
 
-          # 复制生成的可执行文件
           if [ -f "micropython" ]; then
             cp micropython ../../../python-root/usr/local/bin/
           elif [ -f "build-standard/micropython" ]; then
             cp build-standard/micropython ../../../python-root/usr/local/bin/
-          else
-            echo "❌ MicroPython 编译失败: 找不到 micropython 可执行文件"
-            exit 1
-          fi
-
-          # 验证复制结果
-          if [ -f "../../../python-root/usr/local/bin/micropython" ]; then
-            echo "✅ MicroPython 编译成功"
-            file ../../../python-root/usr/local/bin/micropython
           else
             echo "❌ MicroPython 编译失败"
             exit 1
@@ -540,7 +509,7 @@ jobs:
           cd ../../..
           rm -rf micropython
 
-          # 创建测试脚本
+          # 测试脚本
           printf '%s\n' \
             'import sys' \
             'print("=" * 40)' \
@@ -557,7 +526,6 @@ jobs:
             > python-root/home/test.py
           chmod +x python-root/home/test.py
 
-          # 在 /usr/local/bin 中创建符号链接
           cd python-root/usr/local/bin
           ln -sf micropython python
           ln -sf micropython python3
@@ -565,32 +533,24 @@ jobs:
 
           echo "✅ MicroPython 编译完成"
           echo "MicroPython 二进制大小: $(du -h python-root/usr/local/bin/micropython | cut -f1)"
-          echo "Python 命令路径: $(ls -la python-root/usr/local/bin/python*)"
 
       - name: Create rootfs (to be squashfs)
         run: |
           echo "📦 创建 rootfs 目录（将用于 squashfs）..."
-          # rootfs 基础目录结构
           mkdir -p rootfs/{bin,sbin,usr/bin,usr/sbin,usr/local/bin,etc,proc,sys,dev,lib,lib64,tmp,var,run,root,home}
-
-          # 复制 BusyBox 安装内容
           cp -a busybox-1.36.1/_install/* rootfs/
-
-          # 复制 MicroPython 相关内容
           cp -a python-root/* rootfs/
 
-          # 确保内核模块已存在（上一步已安装）
-          if [ ! -d "rootfs/lib/modules" ] || [ -z "$(ls -A rootfs/lib/modules)" ]; then
-            echo "⚠️ 警告: rootfs/lib/modules 为空或不存在，请检查模块安装步骤"
-          else
-            echo "✅ 内核模块已就绪:"
-            du -sh rootfs/lib/modules
+          # 确保 /usr/local/bin/micropython 存在
+          if [ ! -f "rootfs/usr/local/bin/micropython" ]; then
+            echo "❌ MicroPython binary not found in rootfs!"
+            exit 1
           fi
+          echo "✅ MicroPython binary found in rootfs: $(file rootfs/usr/local/bin/micropython)"
 
-          # 设置 MicroPython 只读权限
+          # 设置只读权限
           chmod 555 rootfs/usr/local/bin/micropython
 
-          # 创建符号链接（确保）
           cd rootfs/usr/local/bin
           if [ -f "micropython" ] && [ ! -L "python" ]; then
             ln -sf micropython python
@@ -603,7 +563,7 @@ jobs:
             > rootfs/etc/profile.d/python.sh
           chmod +x rootfs/etc/profile.d/python.sh
 
-          # 创建设备节点
+          # 设备节点
           sudo mknod -m 666 rootfs/dev/null c 1 3 || true
           sudo mknod -m 644 rootfs/dev/console c 5 1 || true
           sudo mknod -m 660 rootfs/dev/tty1 c 4 1 || true
@@ -753,24 +713,21 @@ jobs:
           mksquashfs rootfs rootfs.squashfs -comp xz -b 1M
           echo "✅ squashfs 创建完成: $(du -h rootfs.squashfs | cut -f1)"
 
-      # ===== 修复后的 initramfs 构建（包含内核模块）=====
+      # ===== 构建 initramfs（包含内核模块）=====
       - name: Build initramfs for overlay boot
         run: |
           echo "🛠️ 构建 initramfs（用于挂载 squashfs 和 overlay）..."
           mkdir -p initramfs/{bin,dev,etc,proc,root,sys,mnt/iso,mnt/root,mnt/overlay,newroot}
-
-          # 复制静态编译的 BusyBox
           cp -a busybox-1.36.1/_install/* initramfs/
 
-          # 复制内核模块（确保驱动能在早期被加载）
+          # 复制内核模块
           if [ -d "rootfs/lib/modules" ]; then
             cp -a rootfs/lib/modules initramfs/lib/
             echo "✅ 内核模块已复制到 initramfs"
           else
-            echo "⚠️ 警告: rootfs/lib/modules 不存在，initramfs 可能缺少驱动模块"
+            echo "⚠️ 警告: rootfs/lib/modules 不存在"
           fi
 
-          # 创建设备节点
           sudo mknod -m 600 initramfs/dev/console c 5 1 || true
           sudo mknod -m 666 initramfs/dev/null c 1 3 || true
           sudo mknod -m 660 initramfs/dev/tty1 c 4 1 || true
@@ -778,7 +735,7 @@ jobs:
           sudo mknod -m 660 initramfs/dev/tty3 c 4 3 || true
           sudo mknod -m 660 initramfs/dev/tty4 c 4 4 || true
 
-          # 使用 printf 写入 init 脚本（修复 overlay 挂载错误）
+          # init 脚本（同前，略）
           printf '%s\n' \
             '#!/bin/sh' \
             '' \
@@ -787,16 +744,12 @@ jobs:
             'mount -t sysfs none /sys' \
             'mount -t devtmpfs none /dev' \
             '' \
-            '# 等待设备初始化' \
             'sleep 1' \
             '' \
-            '# 打印启动信息' \
             'echo "GudaoUI Linux - Booting from squashfs with overlay..."' \
             '' \
-            '# 创建挂载点' \
             'mkdir -p /mnt/iso' \
             '' \
-            '# 尝试找到包含 rootfs.squashfs 的设备' \
             'ISO_MOUNTED=0' \
             'for dev in /dev/sr* /dev/hd* /dev/sd*; do' \
             '    [ -e "$dev" ] || continue' \
@@ -813,53 +766,42 @@ jobs:
             '    exec sh' \
             'fi' \
             '' \
-            '# 检查 squashfs 文件是否存在' \
             'if [ ! -f /mnt/iso/boot/rootfs.squashfs ]; then' \
             '    echo "ERROR: /boot/rootfs.squashfs not found on ISO!"' \
-            '    echo "Contents of /mnt/iso:"' \
             '    ls -la /mnt/iso' \
-            '    echo "Contents of /mnt/iso/boot (if exists):"' \
             '    ls -la /mnt/iso/boot 2>/dev/null || echo "/boot directory not found"' \
             '    exec sh' \
             'fi' \
             '' \
-            '# 挂载 squashfs（只读）到 /mnt/root' \
             'mount -t squashfs -o ro,loop /mnt/iso/boot/rootfs.squashfs /mnt/root || {' \
             '    echo "ERROR: Failed to mount squashfs"' \
             '    exec sh' \
             '}' \
             '' \
-            '# 检查 /mnt/root 内容' \
             'echo "Contents of /mnt/root (squashfs):"' \
             'ls -la /mnt/root' \
             '' \
-            '# 创建 overlay 所需的目录（先挂载 tmpfs，再在其上创建子目录）' \
             'mkdir -p /mnt/overlay' \
             'mount -t tmpfs tmpfs /mnt/overlay' \
             'mkdir -p /mnt/overlay/upper /mnt/overlay/work' \
             '' \
-            '# 使用 overlay 合并只读 squashfs 和可写 tmpfs' \
             'mount -t overlay overlay -o lowerdir=/mnt/root,upperdir=/mnt/overlay/upper,workdir=/mnt/overlay/work /newroot || {' \
             '    echo "ERROR: Failed to mount overlay"' \
             '    exec sh' \
             '}' \
             '' \
-            '# 检查 /newroot 内容' \
             'echo "Contents of /newroot (overlay):"' \
             'ls -la /newroot' \
             '' \
-            '# 确保 /newroot/init 存在且可执行' \
             'if [ ! -x /newroot/init ]; then' \
             '    echo "ERROR: /newroot/init not found or not executable!"' \
             '    exec sh' \
             'fi' \
             '' \
-            '# 清理并切换到新根' \
             'umount /proc /sys /dev 2>/dev/null' \
             'exec switch_root /newroot /init' > initramfs/init
           chmod +x initramfs/init
 
-          # 打包 initramfs
           cd initramfs
           find . | cpio -o -H newc | gzip > ../initramfs.cpio.gz
           cd ..
@@ -873,7 +815,6 @@ jobs:
           cp initramfs.cpio.gz iso/boot/initramfs.cpio.gz
           cp rootfs.squashfs iso/boot/rootfs.squashfs
 
-          # 写入 grub.cfg
           printf '%s\n' \
             'set default=0' \
             'set timeout=3' \
