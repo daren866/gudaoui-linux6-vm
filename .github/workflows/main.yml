@@ -40,14 +40,16 @@ jobs:
           echo "RELEASE_TITLE=$RELEASE_TITLE" >> $GITHUB_ENV
           echo "ISO_NAME=$ISO_NAME" >> $GITHUB_ENV
 
+      # ===== 缓存配置（已修改 key，强制使用新缓存）=====
       - name: Cache kernel build
         uses: actions/cache@v4
         id: kernel-cache
         with:
           path: linux-6.18
-          key: kernel-6.18-${{ hashFiles('6.18.x-x86_64-build.conf') }}
+          # 增加版本号 v3 以强制重新编译，确保新驱动被包含
+          key: kernel-6.18-v3-${{ hashFiles('6.18.x-x86_64-build.conf') }}
           restore-keys: |
-            kernel-6.18-
+            kernel-6.18-v3-
 
       - name: Cache busybox build
         uses: actions/cache@v4
@@ -118,6 +120,15 @@ jobs:
           tar -xf linux-6.18.tar.xz
           echo "✅ 内核源码下载完成"
 
+      # ===== 清理源码树（仅当需要编译时执行，确保全新编译）=====
+      - name: Clean kernel source tree for fresh build
+        if: steps.kernel-cache.outputs.cache-hit != 'true'
+        run: |
+          echo "🧹 执行深度清理 (make mrproper)..."
+          cd linux-6.18
+          make mrproper
+          echo "✅ 源码树已清理"
+
       # ===== 修正后的内核配置（针对 x64 架构优化，确保 PCI 和 ACPI 基础支持）=====
       - name: Configure kernel with full driver support (x86_64 optimized)
         run: |
@@ -157,7 +168,9 @@ jobs:
           CONFIG_ACPI_THERMAL=y
           CONFIG_ACPI_CUSTOM_DSDT_FILE=""
           CONFIG_ARCH_HAS_ACPI_TABLE_UPGRADE=y
+          CONFIG_ACPI_TABLE_UPGRADE=y
           CONFIG_ACPI_DEBUG=y
+          CONFIG_ACPI_PCI_SLOT=y
           CONFIG_ACPI_CONTAINER=y
           CONFIG_ACPI_HOTPLUG_MEMORY=y
           CONFIG_ACPI_HOTPLUG_IOAPIC=y
@@ -250,6 +263,7 @@ jobs:
           CONFIG_SND_RME9652=m
           CONFIG_SND_HDSP=m
           CONFIG_SND_HDSPM=m
+          CONFIG_SND_ICE1712=m
           CONFIG_SND_USB=y                         # USB 音频支持
           CONFIG_SND_USB_AUDIO=m                    # USB 音频设备
           CONFIG_SND_USB_UA101=m
@@ -323,11 +337,14 @@ jobs:
           CONFIG_PM_WAKELOCKS=y
           CONFIG_PM_WAKELOCKS_LIMIT=100
           CONFIG_PM_WAKELOCKS_GC=y
+          CONFIG_PM_ADVANCED_DEBUG=y
           CONFIG_PM_TEST_SUSPEND=y
           CONFIG_POWER_SUPPLY=y
           CONFIG_POWER_SUPPLY_DEBUG=y
           CONFIG_SUSPEND=y
           CONFIG_HIBERNATION=y
+          CONFIG_PM_AUTOSLEEP=y
+          CONFIG_PM_WAKELOCKS=y
           CONFIG_PM_TRACE=y
           CONFIG_PM_TRACE_RTC=y
 
@@ -357,14 +374,13 @@ jobs:
           # CONFIG_RFKILL is not set
           EOF
 
-          # 使用 olddefconfig 自动处理依赖关系，确保所有依赖项被正确选择
+          # 使用 olddefconfig 自动处理依赖关系
           make olddefconfig
 
-          # 验证关键配置是否生效
-          echo "验证关键 PCI 和 ACPI 配置："
-          grep -E "CONFIG_PCI=|CONFIG_ACPI=|CONFIG_X86_64=|CONFIG_SND_HDA_INTEL=" .config
+          # ===== 验证关键驱动配置是否启用 =====
+          echo "🔍 验证关键驱动配置是否启用："
+          grep -E "CONFIG_SND_HDA_INTEL=|CONFIG_E1000=|CONFIG_VMXNET3=" .config
 
-          # 显示最终配置统计
           echo "PCI 相关选项数量: $(grep -c "CONFIG_PCI" .config)"
           echo "ACPI 相关选项数量: $(grep -c "CONFIG_ACPI" .config)"
           echo "声音驱动选项数量: $(grep -c "CONFIG_SND_" .config)"
@@ -389,6 +405,20 @@ jobs:
           fi
           echo "内核位置: $(pwd)/arch/x86/boot/bzImage"
           ls -lh arch/x86/boot/bzImage
+
+      # ===== 安装内核模块到 rootfs =====
+      - name: Install kernel modules to rootfs
+        run: |
+          echo "📦 安装内核模块到 rootfs/lib/modules ..."
+          # 创建 rootfs 目录（如果尚未创建）
+          mkdir -p rootfs/lib/modules
+          cd linux-6.18
+          # 安装模块到指定目录
+          make modules_install INSTALL_MOD_PATH=../rootfs
+          cd ..
+          echo "✅ 内核模块安装完成"
+          echo "模块目录内容:"
+          ls -la rootfs/lib/modules/
 
       - name: Download BusyBox
         if: steps.busybox-cache.outputs.cache-hit != 'true'
@@ -540,22 +570,28 @@ jobs:
       - name: Create rootfs (to be squashfs)
         run: |
           echo "📦 创建 rootfs 目录（将用于 squashfs）..."
+          # rootfs 基础目录结构
           mkdir -p rootfs/{bin,sbin,usr/bin,usr/sbin,usr/local/bin,etc,proc,sys,dev,lib,lib64,tmp,var,run,root,home}
+
+          # 复制 BusyBox 安装内容
           cp -a busybox-1.36.1/_install/* rootfs/
+
+          # 复制 MicroPython 相关内容
           cp -a python-root/* rootfs/
 
-          # 确保 /usr/local/bin/micropython 存在
-          if [ ! -f "rootfs/usr/local/bin/micropython" ]; then
-            echo "❌ MicroPython binary not found in rootfs!"
-            exit 1
+          # 确保内核模块已存在（上一步已安装）
+          if [ ! -d "rootfs/lib/modules" ] || [ -z "$(ls -A rootfs/lib/modules)" ]; then
+            echo "⚠️ 警告: rootfs/lib/modules 为空或不存在，请检查模块安装步骤"
+          else
+            echo "✅ 内核模块已就绪:"
+            du -sh rootfs/lib/modules
           fi
-          echo "✅ MicroPython binary found in rootfs: $(file rootfs/usr/local/bin/micropython)"
 
-          # 设置只读权限
+          # 设置 MicroPython 只读权限
           chmod 555 rootfs/usr/local/bin/micropython
 
+          # 创建符号链接（确保）
           cd rootfs/usr/local/bin
-          # 重新检查并创建符号链接（确保）
           if [ -f "micropython" ] && [ ! -L "python" ]; then
             ln -sf micropython python
             ln -sf micropython python3
@@ -567,7 +603,7 @@ jobs:
             > rootfs/etc/profile.d/python.sh
           chmod +x rootfs/etc/profile.d/python.sh
 
-          # 创建基本的设备节点
+          # 创建设备节点
           sudo mknod -m 666 rootfs/dev/null c 1 3 || true
           sudo mknod -m 644 rootfs/dev/console c 5 1 || true
           sudo mknod -m 660 rootfs/dev/tty1 c 4 1 || true
@@ -717,7 +753,7 @@ jobs:
           mksquashfs rootfs rootfs.squashfs -comp xz -b 1M
           echo "✅ squashfs 创建完成: $(du -h rootfs.squashfs | cut -f1)"
 
-      # ===== 修复后的 initramfs 构建（使用 printf 避免 heredoc 问题）=====
+      # ===== 修复后的 initramfs 构建（包含内核模块）=====
       - name: Build initramfs for overlay boot
         run: |
           echo "🛠️ 构建 initramfs（用于挂载 squashfs 和 overlay）..."
@@ -725,6 +761,14 @@ jobs:
 
           # 复制静态编译的 BusyBox
           cp -a busybox-1.36.1/_install/* initramfs/
+
+          # 复制内核模块（确保驱动能在早期被加载）
+          if [ -d "rootfs/lib/modules" ]; then
+            cp -a rootfs/lib/modules initramfs/lib/
+            echo "✅ 内核模块已复制到 initramfs"
+          else
+            echo "⚠️ 警告: rootfs/lib/modules 不存在，initramfs 可能缺少驱动模块"
+          fi
 
           # 创建设备节点
           sudo mknod -m 600 initramfs/dev/console c 5 1 || true
@@ -819,7 +863,7 @@ jobs:
           cd initramfs
           find . | cpio -o -H newc | gzip > ../initramfs.cpio.gz
           cd ..
-          echo "✅ initramfs 创建完成: $(du -h initramfs.cpio.gz | cut -f1)"
+          echo "✅ initramfs 创建完成，大小: $(du -h initramfs.cpio.gz | cut -f1)"
 
       - name: Create bootable ISO
         run: |
@@ -905,6 +949,7 @@ jobs:
             ### 📀 文件系统架构
             - 根文件系统为只读 squashfs，通过 overlayfs 与 tmpfs 合并，实现可写运行时环境
             - MicroPython 位于只读层，确保其二进制不被意外修改
+            - 内核模块已安装并包含在 initramfs 中，确保驱动能被正确加载
 
             ### 📊 构建信息
             - 构建时间: $(date '+%Y-%m-%d %H:%M:%S')
