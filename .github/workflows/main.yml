@@ -157,9 +157,7 @@ jobs:
           CONFIG_ACPI_THERMAL=y
           CONFIG_ACPI_CUSTOM_DSDT_FILE=""
           CONFIG_ARCH_HAS_ACPI_TABLE_UPGRADE=y
-          CONFIG_ACPI_TABLE_UPGRADE=y
           CONFIG_ACPI_DEBUG=y
-          CONFIG_ACPI_PCI_SLOT=y
           CONFIG_ACPI_CONTAINER=y
           CONFIG_ACPI_HOTPLUG_MEMORY=y
           CONFIG_ACPI_HOTPLUG_IOAPIC=y
@@ -252,7 +250,6 @@ jobs:
           CONFIG_SND_RME9652=m
           CONFIG_SND_HDSP=m
           CONFIG_SND_HDSPM=m
-          CONFIG_SND_ICE1712=m
           CONFIG_SND_USB=y                         # USB 音频支持
           CONFIG_SND_USB_AUDIO=m                    # USB 音频设备
           CONFIG_SND_USB_UA101=m
@@ -326,14 +323,11 @@ jobs:
           CONFIG_PM_WAKELOCKS=y
           CONFIG_PM_WAKELOCKS_LIMIT=100
           CONFIG_PM_WAKELOCKS_GC=y
-          CONFIG_PM_ADVANCED_DEBUG=y
           CONFIG_PM_TEST_SUSPEND=y
           CONFIG_POWER_SUPPLY=y
           CONFIG_POWER_SUPPLY_DEBUG=y
           CONFIG_SUSPEND=y
           CONFIG_HIBERNATION=y
-          CONFIG_PM_AUTOSLEEP=y
-          CONFIG_PM_WAKELOCKS=y
           CONFIG_PM_TRACE=y
           CONFIG_PM_TRACE_RTC=y
 
