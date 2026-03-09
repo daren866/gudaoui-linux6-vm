@@ -118,85 +118,244 @@ jobs:
           tar -xf linux-6.18.tar.xz
           echo "✅ 内核源码下载完成"
 
-      # ===== 使用完整的 .config 进行内核配置（修复依赖问题）=====
-      - name: Configure kernel with full driver support
+      # ===== 修正后的内核配置（针对 x64 架构优化，确保 PCI 和 ACPI 基础支持）=====
+      - name: Configure kernel with full driver support (x86_64 optimized)
         run: |
           cd linux-6.18
 
           # 生成一个包含所有必要驱动的 .config 文件
           cat > .config << 'EOF'
-          # 基础设置
+          # ========== 基础架构设置 (x86_64) ==========
           CONFIG_64BIT=y
           CONFIG_X86_64=y
+          CONFIG_X86=y
           CONFIG_SMP=y
+          CONFIG_X86_PAE=y
+          CONFIG_X86_MSR=y
+          CONFIG_X86_CPUID=y
+          
+          # ========== PCI 核心支持 (x64 必须) ==========
           CONFIG_PCI=y
+          CONFIG_PCI_DIRECT=y
+          CONFIG_PCI_MMCONFIG=y
+          CONFIG_PCI_DOMAINS=y
+          CONFIG_PCI_MSI=y                     # 消息信号中断，现代设备必备
+          CONFIG_PCI_IOV=y                      # I/O 虚拟化（虚拟机场景需要）
+          CONFIG_PCI_PRI=y                       # PCI PRI 支持
+          CONFIG_PCI_PASID=y                    # PCI PASID 支持
+          CONFIG_PCI_QUIRKS=y                    # 处理硬件 quirks
 
-          # 必须的基础选项
+          # ========== ACPI 支持 (x64 设备枚举的核心) ==========
+          CONFIG_ACPI=y
+          CONFIG_ACPI_TABLE_UPGRADE=y
+          CONFIG_ACPI_DEBUGGER=y
+          CONFIG_ACPI_DEBUGGER_USER=m
+          CONFIG_ACPI_PCI_SLOT=y
+          CONFIG_ACPI_PROCESSOR=y
+          CONFIG_ACPI_HOTPLUG_CPU=y
+          CONFIG_ACPI_PROCESSOR_AGGREGATOR=y
+          CONFIG_ACPI_THERMAL=y
+          CONFIG_ACPI_CUSTOM_DSDT_FILE=""
+          CONFIG_ARCH_HAS_ACPI_TABLE_UPGRADE=y
+          CONFIG_ACPI_TABLE_UPGRADE=y
+          CONFIG_ACPI_DEBUG=y
+          CONFIG_ACPI_PCI_SLOT=y
+          CONFIG_ACPI_CONTAINER=y
+          CONFIG_ACPI_HOTPLUG_MEMORY=y
+          CONFIG_ACPI_HOTPLUG_IOAPIC=y
+          CONFIG_ACPI_SBS=m                      # 智能电池系统
+          CONFIG_ACPI_HED=y                      # 硬件错误设备
+          CONFIG_ACPI_CUSTOM_METHOD=y
+          CONFIG_ACPI_BGRT=y                      # 启动图形资源表
+          CONFIG_ACPI_REDUCED_HARDWARE_ONLY=y
+          CONFIG_ACPI_NFIT=m                      # NVDIMM 固件接口表
+          CONFIG_ACPI_NUMA=y
+          CONFIG_ACPI_HMAT=y                      # 异构内存属性表
+          CONFIG_ACPI_PRMT=y
+          CONFIG_ACPI_APEI=y                      # ACPI 平台错误接口
+          CONFIG_ACPI_APEI_GHES=y
+          CONFIG_ACPI_APEI_PCIEAER=y
+          CONFIG_ACPI_APEI_MEMORY_FAILURE=y
+          CONFIG_ACPI_APEI_EINJ=y
+          CONFIG_ACPI_APEI_ERST_DEBUG=m
+
+          # ========== 声音支持 (x64 声卡驱动) ==========
           CONFIG_SOUND=y
           CONFIG_SND=y
+          CONFIG_SND_TIMER=y
+          CONFIG_SND_PCM=y
+          CONFIG_SND_HWDEP=m
+          CONFIG_SND_RAWMIDI=m
+          CONFIG_SND_COMPRESS_OFFLOAD=m
+          CONFIG_SND_JACK=y
+          CONFIG_SND_SEQUENCER=m
+          CONFIG_SND_SEQ_DUMMY=m
+          CONFIG_SND_OSSEMUL=y
+          CONFIG_SND_MIXER_OSS=m
+          CONFIG_SND_PCM_OSS=m
+          CONFIG_SND_PCM_OSS_PLUGINS=y
+          CONFIG_SND_PCM_TIMER=y
+          CONFIG_SND_HRTIMER=m
+          CONFIG_SND_DYNAMIC_MINORS=y
+          CONFIG_SND_MAX_CARDS=32
+          CONFIG_SND_SUPPORT_OLD_API=y
+          CONFIG_SND_PROC_FS=y
+          CONFIG_SND_VERBOSE_PROCFS=y
+          CONFIG_SND_VERBOSE_PRINTK=y
+          CONFIG_SND_DEBUG=y
+          CONFIG_SND_DEBUG_VERBOSE=y
+          CONFIG_SND_PCM_XRUN_DEBUG=y
+          CONFIG_SND_VMASTER=y
+          CONFIG_SND_DMA_SGBUF=y
+          CONFIG_SND_CTL_FAST_LOOKUP=y
+          
+          # PCI 声卡驱动
           CONFIG_SND_PCI=y
-          CONFIG_SND_HDA_INTEL=y
+          CONFIG_SND_HDA_INTEL=y                 # Intel HDA 声卡
+          CONFIG_SND_HDA_PATCH_LOADER=y
           CONFIG_SND_HDA_CODEC_REALTEK=y
           CONFIG_SND_HDA_CODEC_HDMI=y
           CONFIG_SND_HDA_CODEC_GENERIC=y
+          CONFIG_SND_HDA_INTEL_HDMI_SILENT=y
           CONFIG_SND_AC97_CODEC=y
-          CONFIG_SND_INTEL8X0=y
-          CONFIG_SND_INTEL8X0M=y
-          CONFIG_SND_SB16=y
-          CONFIG_SND_ENS1370=y
-          CONFIG_SND_ENS1371=y
+          CONFIG_SND_INTEL8X0=y                   # Intel AC97 声卡
+          CONFIG_SND_INTEL8X0M=y                  # Intel AC97 调制解调器
+          CONFIG_SND_SB16=y                        # Sound Blaster 16
+          CONFIG_SND_SBAWE=m
+          CONFIG_SND_SB16_CSP=y
+          CONFIG_SND_ENS1370=y                     # Ensoniq AudioPCI
+          CONFIG_SND_ENS1371=y                     # Ensoniq AudioPCI 97
+          CONFIG_SND_VIA82XX=m
+          CONFIG_SND_VIA82XX_MODEM=m
+          CONFIG_SND_EMU10K1=m
+          CONFIG_SND_EMU10K1X=m
+          CONFIG_SND_CMIPCI=m
+          CONFIG_SND_ALI5451=m
+          CONFIG_SND_ATIIXP=m
+          CONFIG_SND_ATIIXP_MODEM=m
+          CONFIG_SND_CS4281=m
+          CONFIG_SND_CS46XX=m
+          CONFIG_SND_CS46XX_NEW_DSP=y
+          CONFIG_SND_FM801=m
+          CONFIG_SND_FM801_TEA575X=m
+          CONFIG_SND_ICE1712=m
+          CONFIG_SND_ICE1724=m
+          CONFIG_SND_KORG1212=m
+          CONFIG_SND_LOLA=m
+          CONFIG_SND_LX6464ES=m
+          CONFIG_SND_MIXART=m
+          CONFIG_SND_NM256=m
+          CONFIG_SND_PCXHR=m
+          CONFIG_SND_RIPTIDE=m
+          CONFIG_SND_RME32=m
+          CONFIG_SND_RME96=m
+          CONFIG_SND_RME9652=m
+          CONFIG_SND_HDSP=m
+          CONFIG_SND_HDSPM=m
+          CONFIG_SND_ICE1712=m
+          CONFIG_SND_USB=y                         # USB 音频支持
+          CONFIG_SND_USB_AUDIO=m                    # USB 音频设备
+          CONFIG_SND_USB_UA101=m
+          CONFIG_SND_USB_USX2Y=m
+          CONFIG_SND_USB_CAIAQ=m
+          CONFIG_SND_USB_CAIAQ_INPUT=y
+          CONFIG_SND_USB_US122L=m
+          CONFIG_SND_USB_6FIRE=m
+          CONFIG_SND_USB_HIFACE=m
+          CONFIG_SND_USB_TONEPORT=m
 
-          # USB 支持（声卡可能需要）
-          CONFIG_USB_SUPPORT=y
-          CONFIG_USB=y
-          CONFIG_USB_AUDIO=y
-
-          # 网络驱动
+          # ========== 网络驱动 ==========
           CONFIG_NETDEVICES=y
           CONFIG_E1000=y
           CONFIG_E1000E=y
           CONFIG_RTL8139=y
+          CONFIG_8139TOO=y
+          CONFIG_8139TOO_PIO=y
+          CONFIG_8139TOO_TUNE_TWISTER=y
+          CONFIG_8139TOO_8129=y
           CONFIG_PCNET32=y
           CONFIG_NE2K_PCI=y
-          CONFIG_8139TOO=y
+          CONFIG_TIGON3=y                           # Broadcom 千兆网卡
+          CONFIG_BNX2=y
+          CONFIG_BNX2X=y
+          
+          # Intel 网卡系列
+          CONFIG_IGB=y                               # Intel 千兆网卡
+          CONFIG_IGBVF=y                             # Intel 千兆网卡虚拟功能
+          CONFIG_IXGBE=y                             # Intel 万兆网卡
+          CONFIG_IXGBEVF=y
+          CONFIG_I40E=y                              # Intel 40G 网卡
+          CONFIG_I40EVF=y
+          CONFIG_ICE=y                               # Intel E810 系列
 
-          # VirtIO 驱动（QEMU）
+          # Realtek 网卡系列
+          CONFIG_R8169=y                             # Realtek 8169 千兆网卡
+
+          # ========== VirtIO 驱动 (QEMU) ==========
           CONFIG_VIRTIO=y
           CONFIG_VIRTIO_PCI=y
+          CONFIG_VIRTIO_PCI_LEGACY=y
           CONFIG_VIRTIO_BLK=y
           CONFIG_VIRTIO_NET=y
           CONFIG_VIRTIO_CONSOLE=y
           CONFIG_VIRTIO_BALLOON=y
           CONFIG_VIRTIO_INPUT=y
           CONFIG_VIRTIO_MMIO=y
+          CONFIG_VIRTIO_MMIO_CMDLINE_DEVICES=y
 
-          # VMware 驱动
+          # ========== VMware 驱动 ==========
           CONFIG_VMXNET3=y
           CONFIG_DRM_VMWGFX=y
+          CONFIG_DRM_VMWGFX_FBCON=y
           CONFIG_VMWARE_BALLOON=y
           CONFIG_VMWARE_VMCI=y
           CONFIG_VMWARE_VMCI_VSOCKETS=y
           CONFIG_VMWARE_PVSCSI=y
 
-          # VirtualBox 驱动
+          # ========== VirtualBox 驱动 ==========
           CONFIG_VBOXGUEST=y
           CONFIG_DRM_VBOXVIDEO=y
           CONFIG_VBOXSF_FS=y
 
-          # 电源管理
+          # ========== 电源管理 ==========
+          CONFIG_PM=y
+          CONFIG_PM_DEBUG=y
+          CONFIG_PM_ADVANCED_DEBUG=y
+          CONFIG_PM_SLEEP=y
+          CONFIG_PM_AUTOSLEEP=y
+          CONFIG_PM_WAKELOCKS=y
+          CONFIG_PM_WAKELOCKS_LIMIT=100
+          CONFIG_PM_WAKELOCKS_GC=y
+          CONFIG_PM_ADVANCED_DEBUG=y
+          CONFIG_PM_TEST_SUSPEND=y
           CONFIG_POWER_SUPPLY=y
+          CONFIG_POWER_SUPPLY_DEBUG=y
           CONFIG_SUSPEND=y
           CONFIG_HIBERNATION=y
-          CONFIG_ACPI=y
-          CONFIG_ACPI_BUTTON=y
-          CONFIG_ACPI_POWER_METER=y
-          CONFIG_ACPI_PROC_EVENT=y
-          CONFIG_ACPI_SYSTEM_POWER_STATES_SUPPORT=y
+          CONFIG_PM_AUTOSLEEP=y
+          CONFIG_PM_WAKELOCKS=y
+          CONFIG_PM_TRACE=y
+          CONFIG_PM_TRACE_RTC=y
 
-          # 文件系统支持（用于 squashfs 和 overlay）
+          # ========== 文件系统支持 ==========
           CONFIG_SQUASHFS=y
+          CONFIG_SQUASHFS_FILE_CACHE=y
+          CONFIG_SQUASHFS_FILE_DIRECT=y
+          CONFIG_SQUASHFS_DECOMP_SINGLE=y
+          CONFIG_SQUASHFS_DECOMP_MULTI=y
+          CONFIG_SQUASHFS_DECOMP_MULTI_PERCPU=y
+          CONFIG_SQUASHFS_XATTR=y
+          CONFIG_SQUASHFS_ZLIB=y
+          CONFIG_SQUASHFS_LZ4=y
+          CONFIG_SQUASHFS_LZO=y
           CONFIG_SQUASHFS_XZ=y
+          CONFIG_SQUASHFS_ZSTD=y
           CONFIG_OVERLAY_FS=y
+          CONFIG_OVERLAY_FS_REDIRECT_DIR=y
+          CONFIG_OVERLAY_FS_REDIRECT_ALWAYS_FOLLOW=y
+          CONFIG_OVERLAY_FS_INDEX=y
+          CONFIG_OVERLAY_FS_XINO_AUTO=y
+          CONFIG_OVERLAY_FS_METACOPY=y
 
           # 禁用无线网络驱动以减小内核体积
           # CONFIG_WLAN is not set
@@ -204,10 +363,20 @@ jobs:
           # CONFIG_RFKILL is not set
           EOF
 
-          # 使用 olddefconfig 自动处理依赖关系
+          # 使用 olddefconfig 自动处理依赖关系，确保所有依赖项被正确选择
           make olddefconfig
 
-          echo "✅ 内核配置完成"
+          # 验证关键配置是否生效
+          echo "验证关键 PCI 和 ACPI 配置："
+          grep -E "CONFIG_PCI=|CONFIG_ACPI=|CONFIG_X86_64=|CONFIG_SND_HDA_INTEL=" .config
+
+          # 显示最终配置统计
+          echo "PCI 相关选项数量: $(grep -c "CONFIG_PCI" .config)"
+          echo "ACPI 相关选项数量: $(grep -c "CONFIG_ACPI" .config)"
+          echo "声音驱动选项数量: $(grep -c "CONFIG_SND_" .config)"
+          echo "网络驱动选项数量: $(grep -c "CONFIG_E1000\|CONFIG_RTL\|CONFIG_IGB\|CONFIG_R8169" .config)"
+
+          echo "✅ x86_64 内核配置完成"
 
       - name: Build kernel
         run: |
@@ -699,7 +868,7 @@ jobs:
             ## 🎉 GudaoUI Linux V1 with MicroPython (SquashFS + Overlay)
 
             ### 📦 包含组件
-            - Linux 内核 6.18 (虚拟机优化版，包含 VBox/VMware/QEMU 驱动)
+            - Linux 内核 6.18 (x86_64 虚拟机优化版，包含完整的 PCI/ACPI 支持和 VBox/VMware/QEMU 驱动)
             - BusyBox 1.36.1 (静态编译)
             - **MicroPython v1.24.1** (从源码编译，静态链接，**启用 SSL 和加密库支持**)
 
@@ -710,11 +879,28 @@ jobs:
             reboot - 重启系统
             poweroff - 关闭系统
 
-            ### 🔌 虚拟机驱动支持
+            ### 🔌 x86_64 虚拟机驱动支持
+            - **PCI 核心支持**: 完整的 PCI/PCIe 总线驱动，MSI/MSI-X 中断
+            - **ACPI 支持**: 完整的 ACPI 设备枚举和电源管理
             - **VirtualBox**: 网卡、显卡、共享文件夹
-            - **VMware**: VMXNET3 网卡、PVSCSI 存储、VMCI 通信
-            - **QEMU**: VirtIO 全系列、E1000/E1000E、AC97/HDA 声卡
+            - **VMware**: VMXNET3 网卡、PVSCSI 存储、VMCI 通信、VMware 显卡
+            - **QEMU/KVM**: VirtIO 全系列、E1000/E1000E、AC97/HDA 声卡
             - **通用**: Intel HDA 声卡、AC97 声卡、多种 PCI 网卡
+
+            ### 🎵 声卡驱动支持
+            - Intel HDA (高清音频) 全系列
+            - AC97 声卡 (Intel8x0, VIA82xx)
+            - Creative Sound Blaster 系列
+            - Ensoniq AudioPCI 系列
+            - USB 音频设备
+            - 多种专业音频设备驱动
+
+            ### 🌐 网卡驱动支持
+            - Intel 全系列 (e1000/e1000e/igb/ixgbe/i40e/ice)
+            - Realtek 全系列 (8139too/r8169)
+            - Broadcom (tg3/bnx2/bnx2x)
+            - AMD PCnet32
+            - NE2000 兼容网卡
 
             ### 🔒 新增功能
             本次构建**启用了 SSL 和加密库**，MicroPython 可支持 HTTPS 等操作（依赖系统 mbedtls，静态链接）。
