@@ -40,16 +40,15 @@ jobs:
           echo "RELEASE_TITLE=$RELEASE_TITLE" >> $GITHUB_ENV
           echo "ISO_NAME=$ISO_NAME" >> $GITHUB_ENV
 
-      - name: Cache kernel build
+      # 内核源码缓存（仅缓存源码目录，不包含编译产物）
+      - name: Cache kernel source
         uses: actions/cache@v4
-        id: kernel-cache
+        id: kernel-source-cache
         with:
-          path: |
-            linux-6.18
-            kernel-modules.tar.gz
-          key: kernel-6.18-with-modules-${{ hashFiles('6.18.x-x86_64-build.conf') }}
+          path: linux-6.18
+          key: kernel-source-6.18-${{ hashFiles('6.18.x-x86_64-build.conf') }}
           restore-keys: |
-            kernel-6.18-with-modules-
+            kernel-source-6.18-
 
       - name: Cache busybox build
         uses: actions/cache@v4
@@ -64,25 +63,16 @@ jobs:
         run: |
           echo "## 🔍 缓存状态" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 内核缓存" >> $GITHUB_STEP_SUMMARY
-          if [[ "${{ steps.kernel-cache.outputs.cache-hit }}" == "true" ]]; then
-            echo "✅ **内核缓存命中！**" >> $GITHUB_STEP_SUMMARY
-            echo "缓存 Key: \`${{ steps.kernel-cache.outputs.primary-key }}\`" \
-              >> $GITHUB_STEP_SUMMARY
-            # 如果缓存命中，解压内核模块
-            if [ -f "kernel-modules.tar.gz" ]; then
-              echo "📦 解压缓存的内核模块..." >> $GITHUB_STEP_SUMMARY
-              tar -xzf kernel-modules.tar.gz -C linux-6.18/
-            fi
+          echo "### 内核源码缓存" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ steps.kernel-source-cache.outputs.cache-hit }}" == "true" ]]; then
+            echo "✅ **内核源码缓存命中！**" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ 内核缓存未命中" >> $GITHUB_STEP_SUMMARY
+            echo "❌ 内核源码缓存未命中" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### BusyBox 缓存" >> $GITHUB_STEP_SUMMARY
           if [[ "${{ steps.busybox-cache.outputs.cache-hit }}" == "true" ]]; then
             echo "✅ **BusyBox 缓存命中！**" >> $GITHUB_STEP_SUMMARY
-            echo "缓存 Key: \`${{ steps.busybox-cache.outputs.primary-key }}\`" \
-              >> $GITHUB_STEP_SUMMARY
           else
             echo "❌ BusyBox 缓存未命中" >> $GITHUB_STEP_SUMMARY
           fi
@@ -117,7 +107,7 @@ jobs:
           echo "✅ mbedtls 开发库安装完成"
 
       - name: Download kernel source
-        if: steps.kernel-cache.outputs.cache-hit != 'true'
+        if: steps.kernel-source-cache.outputs.cache-hit != 'true'
         run: |
           echo "📥 下载内核源码 linux-6.18..."
           wget -q https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.tar.xz
@@ -136,53 +126,24 @@ jobs:
           else
             make defconfig
           fi
-          echo "🔧 应用虚拟机优化..."
-          # 启用必要的模块支持
-          scripts/config --enable MODULES
-          scripts/config --enable MODULE_UNLOAD
-          scripts/config --enable MODVERSIONS
-          
-          # 启用各种虚拟网卡驱动（编译为模块）
+          echo "🔧 应用虚拟机优化（驱动编译为模块）..."
+          # 基础 VirtIO 支持（部分可模块化）
           scripts/config --enable VIRTIO
           scripts/config --enable VIRTIO_PCI
           scripts/config --enable VIRTIO_BLK
-          scripts/config --enable VIRTIO_NET
-          scripts/config --enable VMXNET3
-          scripts/config --enable E1000
-          scripts/config --enable E1000E
-          scripts/config --enable E100
-          scripts/config --enable PCNET32
-          scripts/config --enable 8139CP
-          scripts/config --enable 8139TOO
-          scripts/config --enable NE2K_PCI
-          
-          # 启用存储控制器驱动（编译为模块）
-          scripts/config --enable ATA
-          scripts/config --enable ATA_PIIX
-          scripts/config --enable SATA_AHCI
-          scripts/config --enable SATA_VIA
-          scripts/config --enable PATA_AMD
-          scripts/config --enable PATA_ATIIXP
-          scripts/config --enable PATA_CMD64X
-          scripts/config --enable PATA_IT821X
-          scripts/config --enable PATA_JMICRON
-          scripts/config --enable PATA_MARVELL
-          scripts/config --enable PATA_OLDPIIX
-          scripts/config --enable PATA_SERVERWORKS
-          scripts/config --enable PATA_SIL680
-          scripts/config --enable PATA_VIA
-          
-          # 启用 SCSI 支持（编译为模块）
-          scripts/config --enable SCSI
-          scripts/config --enable BLK_DEV_SD
-          scripts/config --enable SCSI_SYM53C8XX_2
-          scripts/config --enable SCSI_QLOGIC_1280
-          
-          # 禁用不需要的功能
+          # 网络驱动全部编译为模块（便于按需加载）
+          scripts/config --module VIRTIO_NET
+          scripts/config --module VMXNET3
+          scripts/config --module E1000
+          scripts/config --module PCNET32
+          scripts/config --module 8139CP
+          scripts/config --module 8139TOO
+          scripts/config --module E100
+          scripts/config --module NE2K_PCI
+          # 禁用无关功能
           scripts/config --disable SOUND
           scripts/config --disable USB_SUPPORT
           scripts/config --disable WLAN
-          
           # 电源管理
           scripts/config --enable POWER_SUPPLY
           scripts/config --enable SUSPEND
@@ -192,39 +153,66 @@ jobs:
           scripts/config --enable ACPI_POWER_METER
           scripts/config --enable ACPI_PROC_EVENT
           scripts/config --enable ACPI_SYSTEM_POWER_STATES_SUPPORT
-          
           make olddefconfig
 
-      - name: Build kernel and modules
+      # 内核镜像缓存（单独缓存 bzImage）
+      - name: Cache kernel image
+        uses: actions/cache@v4
+        id: kernel-image-cache
+        with:
+          path: linux-6.18/arch/x86/boot/bzImage
+          key: kernel-image-6.18-${{ hashFiles('linux-6.18/.config') }}
+
+      # 内核模块缓存
+      - name: Cache kernel modules
+        uses: actions/cache@v4
+        id: kernel-modules-cache
+        with:
+          path: linux-6.18/modules.tar.gz
+          key: kernel-modules-6.18-${{ hashFiles('linux-6.18/.config') }}
+
+      - name: Build kernel image (if needed)
         run: |
           cd linux-6.18
           if [ -f "arch/x86/boot/bzImage" ] && \
-             [ "${{ steps.kernel-cache.outputs.cache-hit }}" == "true" ] && \
-             [ -d "modules_install" ]; then
-            echo "✅ 使用缓存的内核和模块，跳过编译"
+             [ "${{ steps.kernel-image-cache.outputs.cache-hit }}" == "true" ]; then
+            echo "✅ 使用缓存的内核镜像，跳过编译"
           else
-            echo "🔨 编译内核和模块中（约 30-40 分钟）..."
+            echo "🔨 编译内核镜像中..."
             start_time=$(date +%s)
             make -j$(nproc) bzImage
-            make -j$(nproc) modules
             end_time=$(date +%s)
             duration=$((end_time - start_time))
-            echo "✅ 内核编译完成，耗时: $((duration / 60)) 分钟"
-            
-            # 创建模块安装目录并安装模块
-            mkdir -p modules_install
-            make INSTALL_MOD_PATH=$(pwd)/modules_install modules_install
-            
-            # 打包模块以便缓存
-            cd ..
-            tar -czf kernel-modules.tar.gz -C linux-6.18/modules_install .
-            cd linux-6.18
+            echo "✅ 内核镜像编译完成，耗时: $((duration / 60)) 分钟"
           fi
           echo "内核位置: $(pwd)/arch/x86/boot/bzImage"
           ls -lh arch/x86/boot/bzImage
-          echo "内核模块大小:"
-          if [ -d "modules_install" ]; then
-            du -sh modules_install/
+
+      - name: Build kernel modules (if needed)
+        run: |
+          cd linux-6.18
+          if [ -f "modules.tar.gz" ] && \
+             [ "${{ steps.kernel-modules-cache.outputs.cache-hit }}" == "true" ]; then
+            echo "✅ 使用缓存的模块包，跳过编译"
+          else
+            echo "🔨 编译内核模块中..."
+            start_time=$(date +%s)
+            make -j$(nproc) modules
+            # 安装模块到临时目录并打包
+            mkdir -p ../modules-install
+            make modules_install INSTALL_MOD_PATH=../modules-install
+            # 打包为 modules.tar.gz（保留 lib/modules 结构）
+            cd ../modules-install
+            tar -czf ../linux-6.18/modules.tar.gz lib
+            cd ../linux-6.18
+            rm -rf ../modules-install
+            end_time=$(date +%s)
+            duration=$((end_time - start_time))
+            echo "✅ 内核模块编译打包完成，耗时: $((duration / 60)) 分钟"
+          fi
+          # 显示模块包大小
+          if [ -f "modules.tar.gz" ]; then
+            echo "模块包大小: $(du -h modules.tar.gz | cut -f1)"
           fi
 
       - name: Download BusyBox
@@ -338,68 +326,47 @@ jobs:
           cd ../../../..
           echo "✅ MicroPython 编译完成"
           echo "MicroPython 二进制大小: $(du -h python-root/usr/local/bin/micropython | cut -f1)"
+          echo "Python 命令路径: $(ls -la python-root/usr/local/bin/python*)"
 
-      - name: Create rootfs with kernel modules
+      - name: Create rootfs (to be squashfs)
         run: |
-          echo "📦 创建 rootfs 目录（包含内核模块）..."
+          echo "📦 创建 rootfs 目录（将用于 squashfs）..."
           mkdir -p rootfs/{bin,sbin,usr/bin,usr/sbin,usr/local/bin,etc,proc,sys,dev,lib,lib64,tmp,var,run,root,home}
-          mkdir -p rootfs/lib/modules
-          
-          # 复制 BusyBox
           cp -a busybox-1.36.1/_install/* rootfs/
-          
-          # 复制 MicroPython
           cp -a python-root/* rootfs/
-          
-          # 复制内核模块（关键步骤！）
-          if [ -d "linux-6.18/modules_install/lib/modules" ]; then
-            echo "📦 复制内核模块到 rootfs..."
-            cp -a linux-6.18/modules_install/lib/modules/* rootfs/lib/modules/
-            echo "内核模块已复制:"
-            ls -la rootfs/lib/modules/
-            du -sh rootfs/lib/modules/
-            
-            # 生成模块依赖
-            if [ -f "rootfs/sbin/depmod" ] || [ -f "rootfs/bin/depmod" ]; then
-              echo "生成模块依赖..."
-              chroot rootfs /sbin/depmod -a 2>/dev/null || true
-            fi
+
+          # 解压内核模块到 rootfs/lib/modules
+          if [ -f linux-6.18/modules.tar.gz ]; then
+            echo "📦 解压内核模块到 rootfs..."
+            tar -xzf linux-6.18/modules.tar.gz -C rootfs/
+            # 运行 depmod 生成模块依赖（需要指定内核版本，但这里在构建时无法运行 depmod，因为需要 /lib/modules/... 目录结构）
+            # 将在 init 中运行 depmod
           else
-            echo "⚠️ 警告: 未找到内核模块目录"
+            echo "⚠️ 未找到内核模块包，网络驱动可能缺失"
           fi
-          
-          # 验证 MicroPython
+
           if [ ! -f "rootfs/usr/local/bin/micropython" ]; then
             echo "❌ MicroPython binary not found in rootfs!"
             exit 1
           fi
-          
           echo "✅ MicroPython binary found in rootfs: $(file rootfs/usr/local/bin/micropython)"
           chmod 555 rootfs/usr/local/bin/micropython
-          
-          # 创建符号链接
           cd rootfs/usr/local/bin
           if [ -f "micropython" ] && [ ! -L "python" ]; then
             ln -sf micropython python
             ln -sf micropython python3
           fi
           cd ../../../..
-          
-          # 创建配置文件
           mkdir -p rootfs/etc/profile.d
           printf '%s\n' 'export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin' \
             > rootfs/etc/profile.d/python.sh
           chmod +x rootfs/etc/profile.d/python.sh
-          
-          # 创建设备节点
           sudo mknod -m 666 rootfs/dev/null c 1 3 || true
           sudo mknod -m 644 rootfs/dev/console c 5 1 || true
           sudo mknod -m 660 rootfs/dev/tty1 c 4 1 || true
           sudo mknod -m 660 rootfs/dev/tty2 c 4 2 || true
           sudo mknod -m 660 rootfs/dev/tty3 c 4 3 || true
           sudo mknod -m 660 rootfs/dev/tty4 c 4 4 || true
-          
-          # 创建 about 脚本
           printf '%s\n' \
             '#!/bin/sh' \
             'echo "====================="' \
@@ -410,20 +377,12 @@ jobs:
             'echo "  Kernel: $(uname -r)"' \
             'echo "  Architecture: $(uname -m)"' \
             'echo ""' \
-            'echo "Loaded Kernel Modules:"' \
-            'lsmod | head -10' \
-            'echo ""' \
-            'echo "Available Network Drivers:"' \
-            'find /lib/modules -name "*.ko*" | grep -E "virtio|e1000|pcnet|8139|ne2k" | head -10' \
-            'echo ""' \
             'echo "Commands:"' \
             'echo "  about     - Show this information"' \
             'echo "  calc      - Simple calculator"' \
             'echo "  python    - MicroPython interpreter"' \
             'echo "  reboot    - Restart system"' \
             'echo "  poweroff  - Shutdown system"' \
-            'echo "  lsmod     - List kernel modules"' \
-            'echo "  modprobe  - Load kernel modules"' \
             'echo ""' \
             'if command -v python >/dev/null 2>&1; then' \
             '    echo "MicroPython: $(python --version 2>&1)"' \
@@ -431,8 +390,6 @@ jobs:
             '    echo "MicroPython: Not available"' \
             'fi' > rootfs/usr/local/bin/about
           chmod +x rootfs/usr/local/bin/about
-          
-          # calc 脚本
           printf '%s\n' \
             '#!/bin/sh' \
             'if [ $# -eq 0 ]; then' \
@@ -449,24 +406,18 @@ jobs:
             '    printf "%.2f\n" "$result"' \
             'fi' > rootfs/usr/local/bin/calc
           chmod +x rootfs/usr/local/bin/calc
-          
-          # reboot 脚本
           printf '%s\n' \
             '#!/bin/sh' \
             'echo "System is rebooting..."' \
             'sync' \
             '/bin/busybox reboot -f' > rootfs/usr/local/bin/reboot
           chmod +x rootfs/usr/local/bin/reboot
-          
-          # poweroff 脚本
           printf '%s\n' \
             '#!/bin/sh' \
             'echo "System is powering off..."' \
             'sync' \
             '/bin/busybox poweroff -f' > rootfs/usr/local/bin/poweroff
           chmod +x rootfs/usr/local/bin/poweroff
-          
-          # 在 /usr/bin 中创建符号链接
           cd rootfs/usr/bin
           ln -sf ../local/bin/about about || true
           ln -sf ../local/bin/calc calc || true
@@ -474,52 +425,36 @@ jobs:
           ln -sf ../local/bin/poweroff poweroff || true
           ln -sf poweroff halt || true
           cd ../../..
-          
-          # init 脚本
+          # 增强的 init 脚本：自动加载所有可用网卡驱动
           printf '%s\n' \
             '#!/bin/sh' \
             'export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin' \
             'export TERM=linux' \
-            '' \
-            '# 挂载基础文件系统' \
             '/bin/busybox mount -t proc none /proc' \
             '/bin/busybox mount -t sysfs none /sys' \
             '/bin/busybox mount -t devtmpfs none /dev' \
             '/bin/busybox mount -t tmpfs tmpfs /tmp' \
             '/bin/busybox mount -t tmpfs tmpfs /run' \
             '/bin/busybox mount -t tmpfs tmpfs /dev/shm' \
-            '' \
-            '# 创建必要目录' \
             '/bin/busybox mkdir -p /dev/shm /run/lock /etc/profile.d' \
+            '/bin/busybox mknod -m 660 /dev/tty1 c 4 1 2>/dev/null || true' \
+            '/bin/busybox mknod -m 660 /dev/tty2 c 4 2 2>/dev/null || true' \
+            '/bin/busybox echo "gudao-ui" > /proc/sys/kernel/hostname 2>/dev/null || true' \
+            '/bin/busybox ip link set lo up 2>/dev/null || true' \
+            '/bin/busybox --install -s' \
             '' \
-            '# 加载必要的内核模块' \
-            'echo "Loading kernel modules..."' \
-            'if [ -f /sbin/modprobe ]; then' \
-            '    # 加载常用网卡驱动模块' \
-            '    for module in e1000 e1000e e100 pcnet32 8139cp 8139too ne2k-pci virtio_net; do' \
-            '        modprobe $module 2>/dev/null && echo "  Loaded: $module" || true' \
-            '    done' \
-            '' \
-            '    # 加载存储控制器模块' \
-            '    for module in ata_piix ahci; do' \
-            '        modprobe $module 2>/dev/null && echo "  Loaded: $module" || true' \
+            '# 加载内核模块（如果存在）' \
+            'if [ -d /lib/modules ]; then' \
+            '    echo "Loading kernel modules..."' \
+            '    depmod -a 2>/dev/null' \
+            '    # 尝试加载常见网卡驱动（可按需添加）' \
+            '    for mod in e1000 e100 pcnet32 8139cp 8139too ne2k-pci virtio_net vmxnet3; do' \
+            '        modprobe $mod 2>/dev/null && echo "  Loaded $mod" || true' \
             '    done' \
             'fi' \
             '' \
-            '# 设置主机名' \
-            '/bin/busybox echo "gudao-ui" > /proc/sys/kernel/hostname 2>/dev/null || true' \
-            '' \
-            '# 启用回环接口' \
-            '/bin/busybox ip link set lo up 2>/dev/null || true' \
-            '' \
-            '# 安装 BusyBox 命令' \
-            '/bin/busybox --install -s' \
-            '' \
-            '# 获取内存信息' \
             'MEM_SIZE=$(grep MemTotal /proc/meminfo 2>/dev/null | awk '"'"'{print int($2/1024)}'"'"')' \
             '[ -z "$MEM_SIZE" ] && MEM_SIZE="Unknown"' \
-            '' \
-            '# 显示欢迎信息' \
             'clear' \
             'echo "========================================"' \
             'echo "     GudaoUI Linux V1"' \
@@ -531,8 +466,6 @@ jobs:
             'echo "  python    - MicroPython interpreter"' \
             'echo "  reboot    - Restart system"' \
             'echo "  poweroff  - Shutdown system"' \
-            'echo "  lsmod     - List loaded modules"' \
-            'echo "  modprobe  - Load modules"' \
             'echo ""' \
             'echo "System: Linux $(uname -r) $(uname -m)"' \
             'echo "Memory: ${MEM_SIZE}MB"' \
@@ -546,74 +479,55 @@ jobs:
             'echo ""' \
             'exec /bin/sh' > rootfs/init
           chmod +x rootfs/init
-          
-          # 基础配置文件
           echo "root:x:0:0:root:/root:/bin/sh" > rootfs/etc/passwd
           echo "root:x:0:" > rootfs/etc/group
+          # 设置主 DNS 为 114.114.114.114，副 DNS 为 8.8.8.8
           printf '%s\n' 'nameserver 114.114.114.114' 'nameserver 8.8.8.8' > rootfs/etc/resolv.conf
           echo "127.0.0.1 localhost gudao-ui" > rootfs/etc/hosts
-          
-          # fstab
           printf '%s\n' \
             'proc    /proc    proc    defaults    0 0' \
             'sysfs   /sys     sysfs   defaults    0 0' \
             'devtmpfs /dev    devtmpfs defaults  0 0' \
             'tmpfs   /tmp     tmpfs   defaults    0 0' \
             'tmpfs   /run     tmpfs   defaults    0 0' > rootfs/etc/fstab
-          
-          # profile
           printf '%s\n' \
             'export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin' \
             'export TERM=linux' \
             'export PS1='\''\u@\h:\w\$ '\' \
             'alias ll='\''ls -la'\' \
             'alias python='\''micropython'\' > rootfs/etc/profile
-          
           echo "rootfs 准备完成，大小: $(du -sh rootfs | cut -f1)"
-          echo "内核模块大小: $(du -sh rootfs/lib/modules 2>/dev/null | cut -f1)"
 
       - name: Create squashfs from rootfs
         run: |
           echo "🗜️ 创建 squashfs 镜像..."
-          # 使用更高的压缩级别，但确保包含所有模块
-          mksquashfs rootfs rootfs.squashfs -comp xz -b 1M -Xbcj x86
+          mksquashfs rootfs rootfs.squashfs -comp xz -b 1M
           echo "✅ squashfs 创建完成: $(du -h rootfs.squashfs | cut -f1)"
-          echo "squashfs 详细信息:"
-          ls -lh rootfs.squashfs
 
       - name: Build initramfs for overlay boot
         run: |
           echo "🛠️ 构建 initramfs（用于挂载 squashfs 和 overlay）..."
           mkdir -p initramfs/{bin,dev,etc,proc,root,sys,mnt/iso,mnt/root,mnt/overlay,newroot}
           cp -a busybox-1.36.1/_install/* initramfs/
-          
-          # 创建必要的设备节点
           sudo mknod -m 600 initramfs/dev/console c 5 1 || true
           sudo mknod -m 666 initramfs/dev/null c 1 3 || true
           sudo mknod -m 660 initramfs/dev/tty1 c 4 1 || true
           sudo mknod -m 660 initramfs/dev/tty2 c 4 2 || true
           sudo mknod -m 660 initramfs/dev/tty3 c 4 3 || true
           sudo mknod -m 660 initramfs/dev/tty4 c 4 4 || true
-          
-          # init 脚本
           printf '%s\n' \
             '#!/bin/sh' \
             '' \
-            '# 挂载必要的文件系统' \
             'mount -t proc none /proc' \
             'mount -t sysfs none /sys' \
             'mount -t devtmpfs none /dev' \
             '' \
-            '# 等待设备初始化' \
             'sleep 1' \
             '' \
-            '# 打印启动信息' \
             'echo "GudaoUI Linux - Booting from squashfs with overlay..."' \
             '' \
-            '# 创建挂载点' \
             'mkdir -p /mnt/iso' \
             '' \
-            '# 尝试找到包含 rootfs.squashfs 的设备' \
             'ISO_MOUNTED=0' \
             'for dev in /dev/sr* /dev/hd* /dev/sd*; do' \
             '    [ -e "$dev" ] || continue' \
@@ -630,7 +544,6 @@ jobs:
             '    exec sh' \
             'fi' \
             '' \
-            '# 检查 squashfs 文件是否存在' \
             'if [ ! -f /mnt/iso/boot/rootfs.squashfs ]; then' \
             '    echo "ERROR: /boot/rootfs.squashfs not found on ISO!"' \
             '    echo "Contents of /mnt/iso:"' \
@@ -640,43 +553,34 @@ jobs:
             '    exec sh' \
             'fi' \
             '' \
-            '# 挂载 squashfs（只读）到 /mnt/root' \
             'mount -t squashfs -o ro,loop /mnt/iso/boot/rootfs.squashfs /mnt/root || {' \
             '    echo "ERROR: Failed to mount squashfs"' \
             '    exec sh' \
             '}' \
             '' \
-            '# 检查 /mnt/root 内容' \
             'echo "Contents of /mnt/root (squashfs):"' \
             'ls -la /mnt/root' \
             '' \
-            '# 创建 overlay 所需的目录' \
             'mkdir -p /mnt/overlay' \
             'mount -t tmpfs tmpfs /mnt/overlay' \
             'mkdir -p /mnt/overlay/upper /mnt/overlay/work' \
             '' \
-            '# 使用 overlay 合并只读 squashfs 和可写 tmpfs' \
             'mount -t overlay overlay -o lowerdir=/mnt/root,upperdir=/mnt/overlay/upper,workdir=/mnt/overlay/work /newroot || {' \
             '    echo "ERROR: Failed to mount overlay"' \
             '    exec sh' \
             '}' \
             '' \
-            '# 检查 /newroot 内容' \
             'echo "Contents of /newroot (overlay):"' \
             'ls -la /newroot' \
             '' \
-            '# 确保 /newroot/init 存在且可执行' \
             'if [ ! -x /newroot/init ]; then' \
             '    echo "ERROR: /newroot/init not found or not executable!"' \
             '    exec sh' \
             'fi' \
             '' \
-            '# 清理并切换到新根' \
             'umount /proc /sys /dev 2>/dev/null' \
             'exec switch_root /newroot /init' > initramfs/init
           chmod +x initramfs/init
-          
-          # 打包 initramfs
           cd initramfs
           find . | cpio -o -H newc | gzip > ../initramfs.cpio.gz
           cd ..
@@ -686,17 +590,9 @@ jobs:
         run: |
           echo "💿 创建启动 ISO..."
           mkdir -p iso/boot/grub
-          
-          # 复制内核、initramfs 和 rootfs.squashfs
           cp linux-6.18/arch/x86/boot/bzImage iso/boot/vmlinuz
           cp initramfs.cpio.gz iso/boot/initramfs.cpio.gz
           cp rootfs.squashfs iso/boot/rootfs.squashfs
-          
-          # 显示 ISO 目录内容
-          echo "ISO 目录内容:"
-          ls -la iso/boot/
-          
-          # 写入 grub.cfg
           printf '%s\n' \
             'set default=0' \
             'set timeout=3' \
@@ -708,26 +604,9 @@ jobs:
             '  linux /boot/vmlinuz loglevel=7' \
             '  initrd /boot/initramfs.cpio.gz' \
             '}' > iso/boot/grub/grub.cfg
-          
-          # 创建 ISO
           grub-mkrescue -o "$ISO_NAME" iso/
-          
           echo "✅ ISO 创建完成: $ISO_NAME"
           echo "ISO 大小: $(du -h $ISO_NAME | cut -f1)"
-          echo "ISO 详细信息:"
-          ls -lh $ISO_NAME
-          
-          # 验证 ISO 内容
-          echo "ISO 内容验证:"
-          mkdir -p iso_mount
-          sudo mount -o loop $ISO_NAME iso_mount 2>/dev/null || true
-          if [ $? -eq 0 ]; then
-            echo "ISO 挂载成功，内容:"
-            ls -la iso_mount/boot/
-            sudo umount iso_mount
-          else
-            echo "无法挂载 ISO 进行验证"
-          fi
 
       - name: Upload ISO to Artifacts
         uses: actions/upload-artifact@v4
@@ -743,41 +622,31 @@ jobs:
           tag_name: ${{ steps.set-release-info.outputs.release_tag }}
           body: |
             ## 🎉 GudaoUI Linux V1 with MicroPython (SquashFS + Overlay)
-            
             ### 📦 包含组件
-            - Linux 内核 6.18 (虚拟机优化版，**包含完整内核模块**)
+            - Linux 内核 6.18 (虚拟机优化版，驱动模块化)
             - BusyBox 1.36.1 (静态编译)
             - **MicroPython v1.24.1** (从源码编译，静态链接，**启用 SSL 和加密库支持**)
-            
             ### 💻 可用命令
-            - `about` - 显示系统信息
-            - `calc` - 简单计算器 (如: calc 1+1)
-            - `python` - MicroPython 解释器
-            - `reboot` - 重启系统
-            - `poweroff` - 关闭系统
-            - `lsmod` - 列出已加载的内核模块
-            - `modprobe` - 加载内核模块
-            
+            about - 显示系统信息
+            calc - 简单计算器 (如: calc 1+1)
+            python - MicroPython 解释器 (可直接运行)
+            reboot - 重启系统
+            poweroff - 关闭系统
             ### 🌐 网络配置
             - 主 DNS: 114.114.114.114
             - 副 DNS: 8.8.8.8
-            
-            ### 🔧 已集成的内核模块（驱动）
-            - **网卡驱动**: VIRTIO, VMXNET3, E1000, E1000E, E100, PCNET32, 8139CP, 8139TOO, NE2K_PCI
-            - **存储控制器**: ATA_PIIX, SATA_AHCI, 和各种 PATA/SATA 驱动
-            - **SCSI 支持**: 包含常用 SCSI 控制器驱动
-            
+            - 内核已集成常见虚拟网卡驱动（作为模块）：
+              VIRTIO_NET、VMXNET3、E1000、PCNET32、8139CP、8139TOO、E100、NE2K_PCI
+            - 系统启动时会自动加载上述驱动
+            ### ⚡ 虚拟机优化
+            已启用 VirtIO 驱动和 ACPI 电源管理
+            ### 📀 文件系统架构
+            - 根文件系统为只读 squashfs，通过 overlayfs 与 tmpfs 合并，实现可写运行时环境
+            - 内核模块存放于 `/lib/modules`，启动时自动加载
             ### 📊 构建信息
             - 构建时间: $(date '+%Y-%m-%d %H:%M:%S')
             - ISO 大小: $(du -h ${{ steps.set-release-info.outputs.iso_name }} | cut -f1)
-            - 内核大小: $(du -h linux-6.18/arch/x86/boot/bzImage | cut -f1)
-            - 内核模块大小: $(du -sh rootfs/lib/modules 2>/dev/null | cut -f1)
             - MicroPython 大小: ~300KB (静态链接，包含 SSL)
-            
-            ### ⚡ 文件系统架构
-            - 根文件系统为只读 squashfs（包含完整内核模块）
-            - 通过 overlayfs 与 tmpfs 合并，实现可写运行时环境
-            - 内核模块位于 `/lib/modules`，可在系统启动后按需加载
           files: ${{ steps.set-release-info.outputs.iso_name }}
           draft: false
           prerelease: false
