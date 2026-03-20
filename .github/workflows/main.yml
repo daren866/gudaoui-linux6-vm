@@ -161,14 +161,6 @@ jobs:
           scripts/config --enable ACPI_SYSTEM_POWER_STATES_SUPPORT
           make olddefconfig
 
-      - name: Verify kernel config
-        run: |
-          cd linux-6.18
-          echo "验证内核配置："
-          grep -E "CONFIG_FAILOVER|CONFIG_NET_FAILOVER" .config || echo "⚠️ 未找到 FAILOVER/NET_FAILOVER 配置"
-          echo "网络驱动模块配置："
-          grep -E "CONFIG_(VIRTIO_NET|VMXNET3|E1000|PCNET32|8139CP|8139TOO|E100|NE2K_PCI)" .config
-
       - name: Build kernel image (if needed)
         run: |
           cd linux-6.18
@@ -189,36 +181,30 @@ jobs:
       - name: Build kernel modules (if needed)
         run: |
           cd linux-6.18
-          # 检查模块包是否存在，若不存在则编译
-          NEED_REBUILD=0
+          # 检查模块包是否存在，若不存在则编译（即使缓存命中）
           if [ -f "modules.tar.gz" ]; then
-            # 解压检查是否包含 failover 模块（修复符号冲突所需）
-            mkdir -p /tmp/check_modules
-            tar -xzf modules.tar.gz -C /tmp/check_modules
-            if [ ! -f "/tmp/check_modules/lib/modules/*/kernel/drivers/net/failover.ko" ] && \
-               [ ! -f "/tmp/check_modules/lib/modules/*/kernel/drivers/net/net_failover.ko" ]; then
-              echo "⚠️ 旧模块包缺少 failover/net_failover 模块，强制重新编译"
-              NEED_REBUILD=1
-            fi
-            rm -rf /tmp/check_modules
-          else
-            NEED_REBUILD=1
-          fi
-          
-          if [ $NEED_REBUILD -eq 0 ] && [ -f "modules.tar.gz" ]; then
-            echo "✅ 使用缓存的模块包，跳过编译"
+            echo "✅ 模块包已存在，跳过编译"
           else
             echo "🔨 编译内核模块中..."
-            # 清理旧模块（可选，保留 .config）
-            # 注意：保留 .config，但清除已编译的模块
-            make clean 2>/dev/null || true
             start_time=$(date +%s)
-            # 确保模块准备就绪
+            # 确保模块准备就绪（生成 modules.builtin 等）
             make modules_prepare
+            # 编译模块
             make -j$(nproc) modules
-            # 安装模块到临时目录并打包
+            # 生成 modules.builtin（如果还没有）
+            if [ ! -f "modules.builtin" ]; then
+              echo "🔧 生成 modules.builtin..."
+              make modules.builtin
+            fi
+            # 安装模块到临时目录
             mkdir -p ../modules-install
             make modules_install INSTALL_MOD_PATH=../modules-install
+            # 验证 modules.builtin 是否被复制
+            KVER=$(ls ../modules-install/lib/modules/ | head -1)
+            if [ -n "$KVER" ] && [ ! -f "../modules-install/lib/modules/$KVER/modules.builtin" ]; then
+              echo "⚠️ modules.builtin 未生成，手动复制..."
+              cp modules.builtin ../modules-install/lib/modules/$KVER/ 2>/dev/null || true
+            fi
             cd ../modules-install
             tar -czf ../linux-6.18/modules.tar.gz lib
             cd ../linux-6.18
@@ -230,9 +216,6 @@ jobs:
           # 显示模块包大小
           if [ -f "modules.tar.gz" ]; then
             echo "模块包大小: $(du -h modules.tar.gz | cut -f1)"
-            # 列出模块包内容（用于调试）
-            echo "模块包内容（前20行）："
-            tar -tzf modules.tar.gz | head -20
           fi
 
       - name: Download BusyBox
@@ -443,7 +426,7 @@ jobs:
           ln -sf ../local/bin/poweroff poweroff || true
           ln -sf poweroff halt || true
           cd ../../..
-          # 增强的 init 脚本：自动加载所有可用网卡驱动
+          # 增强的 init 脚本：先加载 failover 相关模块，再加载网卡驱动
           printf '%s\n' \
             '#!/bin/sh' \
             'export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin' \
@@ -465,8 +448,11 @@ jobs:
             'if [ -d /lib/modules ]; then' \
             '    echo "Loading kernel modules..."' \
             '    depmod -a 2>/dev/null' \
-            '    # 尝试加载常见网卡驱动（可按需添加）' \
-            '    for mod in failover net_failover e1000 e100 pcnet32 8139cp 8139too ne2k-pci virtio_net vmxnet3; do' \
+            '    # 先加载 failover 和 net_failover，避免符号冲突' \
+            '    modprobe failover 2>/dev/null && echo "  Loaded failover" || true' \
+            '    modprobe net_failover 2>/dev/null && echo "  Loaded net_failover" || true' \
+            '    # 再加载网卡驱动' \
+            '    for mod in e1000 e100 pcnet32 8139cp 8139too ne2k-pci virtio_net vmxnet3; do' \
             '        modprobe $mod 2>/dev/null && echo "  Loaded $mod" || true' \
             '    done' \
             'fi' \
@@ -655,7 +641,7 @@ jobs:
             - 副 DNS: 8.8.8.8
             - 内核已集成常见虚拟网卡驱动（作为模块）：
               VIRTIO_NET、VMXNET3、E1000、PCNET32、8139CP、8139TOO、E100、NE2K_PCI
-            - 系统启动时会自动加载上述驱动，并已包含 failover 和 net_failover 模块以避免符号冲突
+            - 系统启动时会自动加载上述驱动（已修复符号冲突问题）
             ### ⚡ 虚拟机优化
             已启用 VirtIO 驱动和 ACPI 电源管理
             ### 📀 文件系统架构
