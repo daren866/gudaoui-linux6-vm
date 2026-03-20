@@ -40,7 +40,7 @@ jobs:
           echo "RELEASE_TITLE=$RELEASE_TITLE" >> $GITHUB_ENV
           echo "ISO_NAME=$ISO_NAME" >> $GITHUB_ENV
 
-      # ---------- 原始缓存结构（用户要求保留）----------
+      # ---------- 原始缓存结构 ----------
       - name: Cache kernel build
         uses: actions/cache@v4
         id: kernel-cache
@@ -130,7 +130,7 @@ jobs:
           else
             make defconfig
           fi
-          echo "🔧 应用虚拟机优化（驱动编译为模块）..."
+          echo "🔧 应用虚拟机优化（驱动编译为模块，FAILOVER 强制内置）..."
           scripts/config --enable VIRTIO
           scripts/config --enable VIRTIO_PCI
           scripts/config --enable VIRTIO_BLK
@@ -143,6 +143,8 @@ jobs:
           scripts/config --module 8139TOO
           scripts/config --module E100
           scripts/config --module NE2K_PCI
+          # 将 FAILOVER 强制编译进内核（解决符号冲突）
+          scripts/config --enable FAILOVER
           # 禁用无关功能
           scripts/config --disable SOUND
           scripts/config --disable USB_SUPPORT
@@ -184,12 +186,16 @@ jobs:
           else
             echo "🔨 编译内核模块中..."
             start_time=$(date +%s)
-            # 确保模块准备就绪（如果之前只编译了镜像，可能需要 modules_prepare）
+            # 确保模块准备就绪
             make modules_prepare
             make -j$(nproc) modules
-            # 安装模块到临时目录并打包
+            # 安装模块到临时目录
             mkdir -p ../modules-install
             make modules_install INSTALL_MOD_PATH=../modules-install
+            # 获取内核版本并生成模块依赖（depmod）
+            KERNEL_VERSION=$(make kernelrelease)
+            depmod -b ../modules-install $KERNEL_VERSION
+            # 打包模块（包含依赖文件）
             cd ../modules-install
             tar -czf ../linux-6.18/modules.tar.gz lib
             cd ../linux-6.18
@@ -327,6 +333,7 @@ jobs:
           if [ -f linux-6.18/modules.tar.gz ]; then
             echo "📦 解压内核模块到 rootfs..."
             tar -xzf linux-6.18/modules.tar.gz -C rootfs/
+            # 确保模块依赖文件存在（depmod 已生成）
           else
             echo "⚠️ 未找到内核模块包，网络驱动可能缺失"
           fi
@@ -411,7 +418,7 @@ jobs:
           ln -sf ../local/bin/poweroff poweroff || true
           ln -sf poweroff halt || true
           cd ../../..
-          # 增强的 init 脚本：自动加载所有可用网卡驱动
+          # 增强的 init 脚本：自动加载所有可用网卡驱动（使用 modprobe 处理依赖）
           printf '%s\n' \
             '#!/bin/sh' \
             'export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin' \
@@ -429,13 +436,16 @@ jobs:
             '/bin/busybox ip link set lo up 2>/dev/null || true' \
             '/bin/busybox --install -s' \
             '' \
-            '# 加载内核模块（如果存在）' \
+            '# 加载内核模块（使用 modprobe 自动处理依赖）' \
             'if [ -d /lib/modules ]; then' \
             '    echo "Loading kernel modules..."' \
-            '    depmod -a 2>/dev/null' \
-            '    # 尝试加载常见网卡驱动（可按需添加）' \
-            '    for mod in e1000 e100 pcnet32 8139cp 8139too ne2k-pci virtio_net vmxnet3; do' \
-            '        modprobe $mod 2>/dev/null && echo "  Loaded $mod" || true' \
+            '    # 按顺序尝试加载（failover 内置时会被忽略）' \
+            '    for mod in failover e1000 e100 pcnet32 8139cp 8139too ne2k-pci virtio_net vmxnet3; do' \
+            '        if modprobe $mod 2>/dev/null; then' \
+            '            echo "  Loaded $mod"' \
+            '        else' \
+            '            echo "  Module $mod not loaded (optional)"' \
+            '        fi' \
             '    done' \
             'fi' \
             '' \
@@ -609,7 +619,7 @@ jobs:
           body: |
             ## 🎉 GudaoUI Linux V1 with MicroPython (SquashFS + Overlay)
             ### 📦 包含组件
-            - Linux 内核 6.18 (虚拟机优化版，驱动模块化)
+            - Linux 内核 6.18 (虚拟机优化版，驱动模块化，`FAILOVER` 内置)
             - BusyBox 1.36.1 (静态编译)
             - **MicroPython v1.24.1** (从源码编译，静态链接，**启用 SSL 和加密库支持**)
             ### 💻 可用命令
@@ -623,7 +633,7 @@ jobs:
             - 副 DNS: 8.8.8.8
             - 内核已集成常见虚拟网卡驱动（作为模块）：
               VIRTIO_NET、VMXNET3、E1000、PCNET32、8139CP、8139TOO、E100、NE2K_PCI
-            - 系统启动时会自动加载上述驱动
+            - 系统启动时会自动加载上述驱动（`modprobe` 处理依赖，已修复符号冲突）
             ### ⚡ 虚拟机优化
             已启用 VirtIO 驱动和 ACPI 电源管理
             ### 📀 文件系统架构
