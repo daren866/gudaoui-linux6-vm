@@ -40,15 +40,15 @@ jobs:
           echo "RELEASE_TITLE=$RELEASE_TITLE" >> $GITHUB_ENV
           echo "ISO_NAME=$ISO_NAME" >> $GITHUB_ENV
 
-      # 内核源码缓存（仅缓存源码目录，不包含编译产物）
-      - name: Cache kernel source
+      # ---------- 原始缓存结构（用户要求保留）----------
+      - name: Cache kernel build
         uses: actions/cache@v4
-        id: kernel-source-cache
+        id: kernel-cache
         with:
           path: linux-6.18
-          key: kernel-source-6.18-${{ hashFiles('6.18.x-x86_64-build.conf') }}
+          key: kernel-6.18-${{ hashFiles('6.18.x-x86_64-build.conf') }}
           restore-keys: |
-            kernel-source-6.18-
+            kernel-6.18-
 
       - name: Cache busybox build
         uses: actions/cache@v4
@@ -63,16 +63,20 @@ jobs:
         run: |
           echo "## 🔍 缓存状态" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 内核源码缓存" >> $GITHUB_STEP_SUMMARY
-          if [[ "${{ steps.kernel-source-cache.outputs.cache-hit }}" == "true" ]]; then
-            echo "✅ **内核源码缓存命中！**" >> $GITHUB_STEP_SUMMARY
+          echo "### 内核缓存" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ steps.kernel-cache.outputs.cache-hit }}" == "true" ]]; then
+            echo "✅ **内核缓存命中！**" >> $GITHUB_STEP_SUMMARY
+            echo "缓存 Key: \`${{ steps.kernel-cache.outputs.primary-key }}\`" \
+              >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ 内核源码缓存未命中" >> $GITHUB_STEP_SUMMARY
+            echo "❌ 内核缓存未命中" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### BusyBox 缓存" >> $GITHUB_STEP_SUMMARY
           if [[ "${{ steps.busybox-cache.outputs.cache-hit }}" == "true" ]]; then
             echo "✅ **BusyBox 缓存命中！**" >> $GITHUB_STEP_SUMMARY
+            echo "缓存 Key: \`${{ steps.busybox-cache.outputs.primary-key }}\`" \
+              >> $GITHUB_STEP_SUMMARY
           else
             echo "❌ BusyBox 缓存未命中" >> $GITHUB_STEP_SUMMARY
           fi
@@ -107,7 +111,7 @@ jobs:
           echo "✅ mbedtls 开发库安装完成"
 
       - name: Download kernel source
-        if: steps.kernel-source-cache.outputs.cache-hit != 'true'
+        if: steps.kernel-cache.outputs.cache-hit != 'true'
         run: |
           echo "📥 下载内核源码 linux-6.18..."
           wget -q https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.tar.xz
@@ -127,7 +131,6 @@ jobs:
             make defconfig
           fi
           echo "🔧 应用虚拟机优化（驱动编译为模块）..."
-          # 基础 VirtIO 支持（部分可模块化）
           scripts/config --enable VIRTIO
           scripts/config --enable VIRTIO_PCI
           scripts/config --enable VIRTIO_BLK
@@ -155,27 +158,11 @@ jobs:
           scripts/config --enable ACPI_SYSTEM_POWER_STATES_SUPPORT
           make olddefconfig
 
-      # 内核镜像缓存（单独缓存 bzImage）
-      - name: Cache kernel image
-        uses: actions/cache@v4
-        id: kernel-image-cache
-        with:
-          path: linux-6.18/arch/x86/boot/bzImage
-          key: kernel-image-6.18-${{ hashFiles('linux-6.18/.config') }}
-
-      # 内核模块缓存
-      - name: Cache kernel modules
-        uses: actions/cache@v4
-        id: kernel-modules-cache
-        with:
-          path: linux-6.18/modules.tar.gz
-          key: kernel-modules-6.18-${{ hashFiles('linux-6.18/.config') }}
-
       - name: Build kernel image (if needed)
         run: |
           cd linux-6.18
           if [ -f "arch/x86/boot/bzImage" ] && \
-             [ "${{ steps.kernel-image-cache.outputs.cache-hit }}" == "true" ]; then
+             [ "${{ steps.kernel-cache.outputs.cache-hit }}" == "true" ]; then
             echo "✅ 使用缓存的内核镜像，跳过编译"
           else
             echo "🔨 编译内核镜像中..."
@@ -191,17 +178,18 @@ jobs:
       - name: Build kernel modules (if needed)
         run: |
           cd linux-6.18
-          if [ -f "modules.tar.gz" ] && \
-             [ "${{ steps.kernel-modules-cache.outputs.cache-hit }}" == "true" ]; then
-            echo "✅ 使用缓存的模块包，跳过编译"
+          # 检查模块包是否存在，若不存在则编译（即使缓存命中）
+          if [ -f "modules.tar.gz" ]; then
+            echo "✅ 模块包已存在，跳过编译"
           else
             echo "🔨 编译内核模块中..."
             start_time=$(date +%s)
+            # 确保模块准备就绪（如果之前只编译了镜像，可能需要 modules_prepare）
+            make modules_prepare
             make -j$(nproc) modules
             # 安装模块到临时目录并打包
             mkdir -p ../modules-install
             make modules_install INSTALL_MOD_PATH=../modules-install
-            # 打包为 modules.tar.gz（保留 lib/modules 结构）
             cd ../modules-install
             tar -czf ../linux-6.18/modules.tar.gz lib
             cd ../linux-6.18
@@ -339,8 +327,6 @@ jobs:
           if [ -f linux-6.18/modules.tar.gz ]; then
             echo "📦 解压内核模块到 rootfs..."
             tar -xzf linux-6.18/modules.tar.gz -C rootfs/
-            # 运行 depmod 生成模块依赖（需要指定内核版本，但这里在构建时无法运行 depmod，因为需要 /lib/modules/... 目录结构）
-            # 将在 init 中运行 depmod
           else
             echo "⚠️ 未找到内核模块包，网络驱动可能缺失"
           fi
