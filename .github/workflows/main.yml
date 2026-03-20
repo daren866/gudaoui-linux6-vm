@@ -102,7 +102,6 @@ jobs:
             pkg-config \
             squashfs-tools
 
-      # ===== 安装 mbedtls 开发库（用于 MicroPython SSL 和 hashlib）=====
       - name: Install libmbedtls-dev
         run: |
           echo "🔐 安装 mbedtls 开发库..."
@@ -137,7 +136,12 @@ jobs:
           scripts/config --enable VIRTIO_NET
           scripts/config --enable VMXNET3
           scripts/config --enable E1000
-          scripts/config --enable DRM_VMWGFX
+          # 添加更多常见虚拟网卡驱动（支持 QEMU、VirtualBox、VMware 等）
+          scripts/config --enable PCNET32
+          scripts/config --enable 8139CP
+          scripts/config --enable 8139TOO
+          scripts/config --enable E100
+          scripts/config --enable NE2K_PCI
           scripts/config --disable SOUND
           scripts/config --disable USB_SUPPORT
           scripts/config --disable WLAN
@@ -210,35 +214,17 @@ jobs:
           fi
           ls -lh busybox
 
-      # ===== MicroPython 构建（强制禁用 cryptolib，启用 SSL，强制使用系统 mbedtls）=====
       - name: Build MicroPython from source
         run: |
           echo "🐍 从源码编译 MicroPython x64（强制禁用 cryptolib，启用 mbedtls）..."
-
-          # 创建目标目录
           mkdir -p python-root/usr/local/bin
           mkdir -p python-root/home
-
-          # 克隆 MicroPython 源码
           git clone https://github.com/micropython/micropython.git
           cd micropython
-
-          # 切换到稳定版本（v1.24.1）
           git checkout v1.24.1
-
-          # 初始化所有子模块（包括 mbedtls）
-          echo "📦 初始化子模块..."
           git submodule update --init --recursive
-
-          # 编译 mpy-cross
-          echo "🔨 编译 mpy-cross..."
           make -C mpy-cross
-
-          # 进入 Unix 端口目录
           cd ports/unix
-
-          # 写入 mpconfigport.mk（强制启用 mbedtls）
-          echo "📝 写入 mpconfigport.mk 配置..."
           printf '%s\n' \
             '# 模块配置 - 强制禁用 cryptolib，使用 mbedtls 提供 SSL 和哈希' \
             'MICROPY_PY_BTREE = 0' \
@@ -251,23 +237,15 @@ jobs:
             'MICROPY_PY_FFI = 0' \
             'MICROPY_PY_THREAD = 0' \
             'MICROPY_USE_READLINE = 1' > mpconfigport.mk
-
-          # 同时修改 variants/standard/mpconfigvariant.h（如果存在）
           if [ -f "variants/standard/mpconfigvariant.h" ]; then
-            echo "📝 修改 variants/standard/mpconfigvariant.h 禁用 cryptolib..."
             sed -i '/MICROPY_PY_CRYPTOLIB/d' variants/standard/mpconfigvariant.h
             echo "#undef MICROPY_PY_CRYPTOLIB" >> variants/standard/mpconfigvariant.h
             echo "#define MICROPY_PY_CRYPTOLIB (0)" >> variants/standard/mpconfigvariant.h
           fi
-
-          echo "🔨 编译 MicroPython（静态编译，启用 SSL，强制禁用 cryptolib，使用系统 mbedtls）..."
-          # 编译 Unix 版本的 MicroPython，通过命令行参数再次强制覆盖
           make -j$(nproc) \
             CFLAGS_EXTRA="-static -I/usr/include/mbedtls" \
             LDFLAGS_EXTRA="-static" \
             MICROPY_PY_CRYPTOLIB=0
-
-          # 复制生成的可执行文件
           if [ -f "micropython" ]; then
             cp micropython ../../../python-root/usr/local/bin/
           elif [ -f "build-standard/micropython" ]; then
@@ -276,8 +254,6 @@ jobs:
             echo "❌ MicroPython 编译失败: 找不到 micropython 可执行文件"
             exit 1
           fi
-
-          # 验证复制结果
           if [ -f "../../../python-root/usr/local/bin/micropython" ]; then
             echo "✅ MicroPython 编译成功"
             file ../../../python-root/usr/local/bin/micropython
@@ -285,11 +261,8 @@ jobs:
             echo "❌ MicroPython 编译失败"
             exit 1
           fi
-
           cd ../../..
           rm -rf micropython
-
-          # 创建测试脚本
           printf '%s\n' \
             'import sys' \
             'print("=" * 40)' \
@@ -305,13 +278,10 @@ jobs:
             'print("\nMicroPython is working in your custom system!")' \
             > python-root/home/test.py
           chmod +x python-root/home/test.py
-
-          # 在 /usr/local/bin 中创建符号链接
           cd python-root/usr/local/bin
           ln -sf micropython python
           ln -sf micropython python3
           cd ../../../..
-
           echo "✅ MicroPython 编译完成"
           echo "MicroPython 二进制大小: $(du -h python-root/usr/local/bin/micropython | cut -f1)"
           echo "Python 命令路径: $(ls -la python-root/usr/local/bin/python*)"
@@ -322,39 +292,28 @@ jobs:
           mkdir -p rootfs/{bin,sbin,usr/bin,usr/sbin,usr/local/bin,etc,proc,sys,dev,lib,lib64,tmp,var,run,root,home}
           cp -a busybox-1.36.1/_install/* rootfs/
           cp -a python-root/* rootfs/
-
-          # 确保 /usr/local/bin/micropython 存在
           if [ ! -f "rootfs/usr/local/bin/micropython" ]; then
             echo "❌ MicroPython binary not found in rootfs!"
             exit 1
           fi
           echo "✅ MicroPython binary found in rootfs: $(file rootfs/usr/local/bin/micropython)"
-
-          # 设置只读权限
           chmod 555 rootfs/usr/local/bin/micropython
-
           cd rootfs/usr/local/bin
-          # 重新检查并创建符号链接（确保）
           if [ -f "micropython" ] && [ ! -L "python" ]; then
             ln -sf micropython python
             ln -sf micropython python3
           fi
           cd ../../../..
-
           mkdir -p rootfs/etc/profile.d
           printf '%s\n' 'export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin' \
             > rootfs/etc/profile.d/python.sh
           chmod +x rootfs/etc/profile.d/python.sh
-
-          # 创建基本的设备节点
           sudo mknod -m 666 rootfs/dev/null c 1 3 || true
           sudo mknod -m 644 rootfs/dev/console c 5 1 || true
           sudo mknod -m 660 rootfs/dev/tty1 c 4 1 || true
           sudo mknod -m 660 rootfs/dev/tty2 c 4 2 || true
           sudo mknod -m 660 rootfs/dev/tty3 c 4 3 || true
           sudo mknod -m 660 rootfs/dev/tty4 c 4 4 || true
-
-          # about 脚本
           printf '%s\n' \
             '#!/bin/sh' \
             'echo "====================="' \
@@ -378,8 +337,6 @@ jobs:
             '    echo "MicroPython: Not available"' \
             'fi' > rootfs/usr/local/bin/about
           chmod +x rootfs/usr/local/bin/about
-
-          # calc 脚本
           printf '%s\n' \
             '#!/bin/sh' \
             'if [ $# -eq 0 ]; then' \
@@ -396,24 +353,18 @@ jobs:
             '    printf "%.2f\n" "$result"' \
             'fi' > rootfs/usr/local/bin/calc
           chmod +x rootfs/usr/local/bin/calc
-
-          # reboot 脚本
           printf '%s\n' \
             '#!/bin/sh' \
             'echo "System is rebooting..."' \
             'sync' \
             '/bin/busybox reboot -f' > rootfs/usr/local/bin/reboot
           chmod +x rootfs/usr/local/bin/reboot
-
-          # poweroff 脚本
           printf '%s\n' \
             '#!/bin/sh' \
             'echo "System is powering off..."' \
             'sync' \
             '/bin/busybox poweroff -f' > rootfs/usr/local/bin/poweroff
           chmod +x rootfs/usr/local/bin/poweroff
-
-          # 在 /usr/bin 中创建符号链接
           cd rootfs/usr/bin
           ln -sf ../local/bin/about about || true
           ln -sf ../local/bin/calc calc || true
@@ -421,8 +372,6 @@ jobs:
           ln -sf ../local/bin/poweroff poweroff || true
           ln -sf poweroff halt || true
           cd ../../..
-
-          # init 脚本
           printf '%s\n' \
             '#!/bin/sh' \
             'export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin' \
@@ -465,29 +414,23 @@ jobs:
             'echo ""' \
             'exec /bin/sh' > rootfs/init
           chmod +x rootfs/init
-
-          # 基础配置文件
           echo "root:x:0:0:root:/root:/bin/sh" > rootfs/etc/passwd
           echo "root:x:0:" > rootfs/etc/group
-          echo "nameserver 8.8.8.8" > rootfs/etc/resolv.conf
+          # 设置主 DNS 为 114.114.114.114，副 DNS 为 8.8.8.8
+          printf '%s\n' 'nameserver 114.114.114.114' 'nameserver 8.8.8.8' > rootfs/etc/resolv.conf
           echo "127.0.0.1 localhost gudao-ui" > rootfs/etc/hosts
-
-          # fstab
           printf '%s\n' \
             'proc    /proc    proc    defaults    0 0' \
             'sysfs   /sys     sysfs   defaults    0 0' \
             'devtmpfs /dev    devtmpfs defaults  0 0' \
             'tmpfs   /tmp     tmpfs   defaults    0 0' \
             'tmpfs   /run     tmpfs   defaults    0 0' > rootfs/etc/fstab
-
-          # profile
           printf '%s\n' \
             'export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin' \
             'export TERM=linux' \
             'export PS1='\''\u@\h:\w\$ '\' \
             'alias ll='\''ls -la'\' \
             'alias python='\''micropython'\' > rootfs/etc/profile
-
           echo "rootfs 准备完成，大小: $(du -sh rootfs | cut -f1)"
 
       - name: Create squashfs from rootfs
@@ -496,42 +439,30 @@ jobs:
           mksquashfs rootfs rootfs.squashfs -comp xz -b 1M
           echo "✅ squashfs 创建完成: $(du -h rootfs.squashfs | cut -f1)"
 
-      # ===== 修复后的 initramfs 构建（使用 printf 避免 heredoc 问题）=====
       - name: Build initramfs for overlay boot
         run: |
           echo "🛠️ 构建 initramfs（用于挂载 squashfs 和 overlay）..."
           mkdir -p initramfs/{bin,dev,etc,proc,root,sys,mnt/iso,mnt/root,mnt/overlay,newroot}
-
-          # 复制静态编译的 BusyBox
           cp -a busybox-1.36.1/_install/* initramfs/
-
-          # 创建设备节点
           sudo mknod -m 600 initramfs/dev/console c 5 1 || true
           sudo mknod -m 666 initramfs/dev/null c 1 3 || true
           sudo mknod -m 660 initramfs/dev/tty1 c 4 1 || true
           sudo mknod -m 660 initramfs/dev/tty2 c 4 2 || true
           sudo mknod -m 660 initramfs/dev/tty3 c 4 3 || true
           sudo mknod -m 660 initramfs/dev/tty4 c 4 4 || true
-
-          # 使用 printf 写入 init 脚本（修复 overlay 挂载错误）
           printf '%s\n' \
             '#!/bin/sh' \
             '' \
-            '# 挂载必要的文件系统' \
             'mount -t proc none /proc' \
             'mount -t sysfs none /sys' \
             'mount -t devtmpfs none /dev' \
             '' \
-            '# 等待设备初始化' \
             'sleep 1' \
             '' \
-            '# 打印启动信息' \
             'echo "GudaoUI Linux - Booting from squashfs with overlay..."' \
             '' \
-            '# 创建挂载点' \
             'mkdir -p /mnt/iso' \
             '' \
-            '# 尝试找到包含 rootfs.squashfs 的设备' \
             'ISO_MOUNTED=0' \
             'for dev in /dev/sr* /dev/hd* /dev/sd*; do' \
             '    [ -e "$dev" ] || continue' \
@@ -548,7 +479,6 @@ jobs:
             '    exec sh' \
             'fi' \
             '' \
-            '# 检查 squashfs 文件是否存在' \
             'if [ ! -f /mnt/iso/boot/rootfs.squashfs ]; then' \
             '    echo "ERROR: /boot/rootfs.squashfs not found on ISO!"' \
             '    echo "Contents of /mnt/iso:"' \
@@ -558,43 +488,34 @@ jobs:
             '    exec sh' \
             'fi' \
             '' \
-            '# 挂载 squashfs（只读）到 /mnt/root' \
             'mount -t squashfs -o ro,loop /mnt/iso/boot/rootfs.squashfs /mnt/root || {' \
             '    echo "ERROR: Failed to mount squashfs"' \
             '    exec sh' \
             '}' \
             '' \
-            '# 检查 /mnt/root 内容' \
             'echo "Contents of /mnt/root (squashfs):"' \
             'ls -la /mnt/root' \
             '' \
-            '# 创建 overlay 所需的目录（先挂载 tmpfs，再在其上创建子目录）' \
             'mkdir -p /mnt/overlay' \
             'mount -t tmpfs tmpfs /mnt/overlay' \
             'mkdir -p /mnt/overlay/upper /mnt/overlay/work' \
             '' \
-            '# 使用 overlay 合并只读 squashfs 和可写 tmpfs' \
             'mount -t overlay overlay -o lowerdir=/mnt/root,upperdir=/mnt/overlay/upper,workdir=/mnt/overlay/work /newroot || {' \
             '    echo "ERROR: Failed to mount overlay"' \
             '    exec sh' \
             '}' \
             '' \
-            '# 检查 /newroot 内容' \
             'echo "Contents of /newroot (overlay):"' \
             'ls -la /newroot' \
             '' \
-            '# 确保 /newroot/init 存在且可执行' \
             'if [ ! -x /newroot/init ]; then' \
             '    echo "ERROR: /newroot/init not found or not executable!"' \
             '    exec sh' \
             'fi' \
             '' \
-            '# 清理并切换到新根' \
             'umount /proc /sys /dev 2>/dev/null' \
             'exec switch_root /newroot /init' > initramfs/init
           chmod +x initramfs/init
-
-          # 打包 initramfs
           cd initramfs
           find . | cpio -o -H newc | gzip > ../initramfs.cpio.gz
           cd ..
@@ -607,8 +528,6 @@ jobs:
           cp linux-6.18/arch/x86/boot/bzImage iso/boot/vmlinuz
           cp initramfs.cpio.gz iso/boot/initramfs.cpio.gz
           cp rootfs.squashfs iso/boot/rootfs.squashfs
-
-          # 写入 grub.cfg
           printf '%s\n' \
             'set default=0' \
             'set timeout=3' \
@@ -620,7 +539,6 @@ jobs:
             '  linux /boot/vmlinuz loglevel=7' \
             '  initrd /boot/initramfs.cpio.gz' \
             '}' > iso/boot/grub/grub.cfg
-
           grub-mkrescue -o "$ISO_NAME" iso/
           echo "✅ ISO 创建完成: $ISO_NAME"
           echo "ISO 大小: $(du -h $ISO_NAME | cut -f1)"
@@ -639,29 +557,25 @@ jobs:
           tag_name: ${{ steps.set-release-info.outputs.release_tag }}
           body: |
             ## 🎉 GudaoUI Linux V1 with MicroPython (SquashFS + Overlay)
-
             ### 📦 包含组件
-            - Linux 内核 6.18 (虚拟机优化版)
+            - Linux 内核 6.18 (虚拟机优化版，添加了常见虚拟网卡驱动)
             - BusyBox 1.36.1 (静态编译)
             - **MicroPython v1.24.1** (从源码编译，静态链接，**启用 SSL 和加密库支持**)
-
             ### 💻 可用命令
             about - 显示系统信息
             calc - 简单计算器 (如: calc 1+1)
             python - MicroPython 解释器 (可直接运行)
             reboot - 重启系统
             poweroff - 关闭系统
-
-            ### 🔒 新增功能
-            本次构建**启用了 SSL 和加密库**，MicroPython 可支持 HTTPS 等操作（依赖系统 mbedtls，静态链接）。
-
+            ### 🌐 网络配置
+            - 主 DNS: 114.114.114.114
+            - 副 DNS: 8.8.8.8
+            - 内核已集成常见虚拟网卡驱动：VIRTIO、VMXNET3、E1000、PCNET32、8139CP、8139TOO、E100、NE2K_PCI
             ### ⚡ 虚拟机优化
             已启用 VirtIO 驱动和 ACPI 电源管理
-
             ### 📀 文件系统架构
             - 根文件系统为只读 squashfs，通过 overlayfs 与 tmpfs 合并，实现可写运行时环境
             - MicroPython 位于只读层，确保其二进制不被意外修改
-
             ### 📊 构建信息
             - 构建时间: $(date '+%Y-%m-%d %H:%M:%S')
             - ISO 大小: $(du -h ${{ steps.set-release-info.outputs.iso_name }} | cut -f1)
