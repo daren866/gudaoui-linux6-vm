@@ -130,11 +130,11 @@ jobs:
             make defconfig
           fi
           echo "🔧 应用虚拟机优化（驱动编译为模块）..."
-          # 基础 VirtIO 支持（部分可模块化）
+          # 基础 VirtIO 支持
           scripts/config --enable VIRTIO
           scripts/config --enable VIRTIO_PCI
           scripts/config --enable VIRTIO_BLK
-          # 网络驱动全部编译为模块（便于按需加载）
+          # 网络驱动全部编译为模块
           scripts/config --module VIRTIO_NET
           scripts/config --module VMXNET3
           scripts/config --module E1000
@@ -143,9 +143,17 @@ jobs:
           scripts/config --module 8139TOO
           scripts/config --module E100
           scripts/config --module NE2K_PCI
-          # 🔧 关键修复：将 failover 及其依赖也编译为模块，避免符号冲突
+          # 关键修复：将 failover 相关也编译为模块，避免符号冲突
           scripts/config --module FAILOVER
           scripts/config --module NET_FAILOVER
+          # ============================================================
+          # 网络自动配置所需的内核选项（支持 DHCP）
+          # ============================================================
+          scripts/config --enable PACKET
+          scripts/config --enable UNIX
+          scripts/config --enable INET
+          scripts/config --enable IP_PNP
+          scripts/config --enable IP_PNP_DHCP
           # 禁用无关功能
           scripts/config --disable SOUND
           scripts/config --disable USB_SUPPORT
@@ -181,28 +189,21 @@ jobs:
       - name: Build kernel modules (if needed)
         run: |
           cd linux-6.18
-          # 检查模块包是否存在，若不存在则编译（即使缓存命中）
           if [ -f "modules.tar.gz" ]; then
             echo "✅ 模块包已存在，跳过编译"
           else
             echo "🔨 编译内核模块中..."
             start_time=$(date +%s)
-            # 确保模块准备就绪（生成 modules.builtin 等）
             make modules_prepare
-            # 编译模块
             make -j$(nproc) modules
-            # 生成 modules.builtin（如果还没有）
             if [ ! -f "modules.builtin" ]; then
               echo "🔧 生成 modules.builtin..."
               make modules.builtin
             fi
-            # 安装模块到临时目录
             mkdir -p ../modules-install
             make modules_install INSTALL_MOD_PATH=../modules-install
-            # 验证 modules.builtin 是否被复制
             KVER=$(ls ../modules-install/lib/modules/ | head -1)
             if [ -n "$KVER" ] && [ ! -f "../modules-install/lib/modules/$KVER/modules.builtin" ]; then
-              echo "⚠️ modules.builtin 未生成，手动复制..."
               cp modules.builtin ../modules-install/lib/modules/$KVER/ 2>/dev/null || true
             fi
             cd ../modules-install
@@ -213,7 +214,6 @@ jobs:
             duration=$((end_time - start_time))
             echo "✅ 内核模块编译打包完成，耗时: $((duration / 60)) 分钟"
           fi
-          # 显示模块包大小
           if [ -f "modules.tar.gz" ]; then
             echo "模块包大小: $(du -h modules.tar.gz | cut -f1)"
           fi
@@ -243,6 +243,10 @@ jobs:
           sed -i 's/# CONFIG_FEATURE_PS_LONG is not set/CONFIG_FEATURE_PS_LONG=y/' .config
           sed -i 's/# CONFIG_FEATURE_TOP_CPU_USAGE_PERCENTAGE is not set/CONFIG_FEATURE_TOP_CPU_USAGE_PERCENTAGE=y/' .config
           sed -i 's/# CONFIG_FEATURE_SHUTDOWN_LOGIN is not set/CONFIG_FEATURE_SHUTDOWN_LOGIN=y/' .config
+          # ============================================================
+          # 启用 udhcpc（DHCP 客户端）
+          # ============================================================
+          sed -i 's/# CONFIG_UDHCPC is not set/CONFIG_UDHCPC=y/' .config
           make oldconfig
 
       - name: Build BusyBox
@@ -334,9 +338,58 @@ jobs:
       - name: Create rootfs (to be squashfs)
         run: |
           echo "📦 创建 rootfs 目录（将用于 squashfs）..."
-          mkdir -p rootfs/{bin,sbin,usr/bin,usr/sbin,usr/local/bin,etc,proc,sys,dev,lib,lib64,tmp,var,run,root,home}
+          mkdir -p rootfs/{bin,sbin,usr/bin,usr/sbin,usr/local/bin,etc,proc,sys,dev,lib,lib64,tmp,var,run,root,home,usr/share/udhcpc}
           cp -a busybox-1.36.1/_install/* rootfs/
           cp -a python-root/* rootfs/
+
+          # ============================================================
+          # 创建 udhcpc 默认脚本（DHCP 配置 DNS 的关键）
+          # 参考：https://wiki.alpinelinux.cn/wiki/Udhcpc
+          # ============================================================
+          cat > rootfs/usr/share/udhcpc/default.script << 'EOF'
+          #!/bin/sh
+          # udhcpc 默认脚本 - 配置网络接口和 DNS
+          # 当 udhcpc 获取到 IP 后会自动调用此脚本
+
+          INTERFACE="$1"
+          [ -n "$INTERFACE" ] || exit 1
+
+          case "$2" in
+          deconfig)
+              # 接口被释放时清理配置
+              ip addr flush dev "$INTERFACE" 2>/dev/null
+              ip link set "$INTERFACE" down 2>/dev/null
+              ;;
+          bound|renew)
+              # 获取到 IP 或续约时配置网络
+              # 设置 IP 地址
+              ip addr add "$ip/$mask" dev "$INTERFACE" 2>/dev/null
+              ip link set "$INTERFACE" up 2>/dev/null
+              
+              # 设置默认路由
+              if [ -n "$router" ]; then
+                  # 删除现有默认路由
+                  ip route del default 2>/dev/null
+                  for r in $router; do
+                      ip route add default via "$r" dev "$INTERFACE" 2>/dev/null
+                      break
+                  done
+              fi
+              
+              # 设置 DNS（从 DHCP 获取的）
+              if [ -n "$dns" ]; then
+                  # 构建 resolv.conf 头
+                  echo "# Generated by udhcpc from DHCP" > /etc/resolv.conf.tmp
+                  for ns in $dns; do
+                      echo "nameserver $ns" >> /etc/resolv.conf.tmp
+                  done
+                  mv /etc/resolv.conf.tmp /etc/resolv.conf
+              fi
+              ;;
+          esac
+          exit 0
+          EOF
+          chmod +x rootfs/usr/share/udhcpc/default.script
 
           # 解压内核模块到 rootfs/lib/modules
           if [ -f linux-6.18/modules.tar.gz ]; then
@@ -426,7 +479,9 @@ jobs:
           ln -sf ../local/bin/poweroff poweroff || true
           ln -sf poweroff halt || true
           cd ../../..
-          # 增强的 init 脚本：先加载 failover 相关模块，再加载网卡驱动
+          # ============================================================
+          # init 脚本：自动加载网卡驱动 + DHCP 获取 IP + 固定 DNS
+          # ============================================================
           printf '%s\n' \
             '#!/bin/sh' \
             'export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin' \
@@ -441,21 +496,67 @@ jobs:
             '/bin/busybox mknod -m 660 /dev/tty1 c 4 1 2>/dev/null || true' \
             '/bin/busybox mknod -m 660 /dev/tty2 c 4 2 2>/dev/null || true' \
             '/bin/busybox echo "gudao-ui" > /proc/sys/kernel/hostname 2>/dev/null || true' \
-            '/bin/busybox ip link set lo up 2>/dev/null || true' \
             '/bin/busybox --install -s' \
             '' \
-            '# 加载内核模块（如果存在）' \
+            '# 加载内核模块' \
             'if [ -d /lib/modules ]; then' \
             '    echo "Loading kernel modules..."' \
             '    depmod -a 2>/dev/null' \
-            '    # 先加载 failover 和 net_failover，避免符号冲突' \
             '    modprobe failover 2>/dev/null && echo "  Loaded failover" || true' \
             '    modprobe net_failover 2>/dev/null && echo "  Loaded net_failover" || true' \
-            '    # 再加载网卡驱动' \
             '    for mod in e1000 e100 pcnet32 8139cp 8139too ne2k-pci virtio_net vmxnet3; do' \
             '        modprobe $mod 2>/dev/null && echo "  Loaded $mod" || true' \
             '    done' \
             'fi' \
+            '' \
+            '# ============================================' \
+            '# 网络自动配置（DHCP + 固定 DNS）' \
+            '# ============================================' \
+            'echo ""' \
+            'echo "=== Network Configuration ==="' \
+            '' \
+            '# 等待网络设备就绪' \
+            'sleep 2' \
+            '' \
+            '# 遍历所有以太网接口' \
+            'CONFIGURED=0' \
+            'for iface in $(ip link show | grep -E "^[0-9]+: (eth|ens|enp)" | cut -d: -f2 | tr -d " "); do' \
+            '    echo "Configuring $iface via DHCP..."' \
+            '    # 使用 udhcpc 获取 IP，指定自定义脚本' \
+            '    if udhcpc -i "$iface" -s /usr/share/udhcpc/default.script -n -q -t 5 -T 2 2>/dev/null; then' \
+            '        echo "✅ DHCP succeeded on $iface"' \
+            '        CONFIGURED=1' \
+            '        break' \
+            '    else' \
+            '        echo "⚠️ DHCP failed on $iface"' \
+            '    fi' \
+            'done' \
+            '' \
+            '# 如果没有找到接口，尝试 eth0' \
+            'if [ $CONFIGURED -eq 0 ]; then' \
+            '    echo "No interfaces found, trying eth0..."' \
+            '    ip link set eth0 up 2>/dev/null' \
+            '    udhcpc -i eth0 -s /usr/share/udhcpc/default.script -n -q -t 5 -T 2 2>/dev/null && CONFIGURED=1' \
+            'fi' \
+            '' \
+            '# ============================================' \
+            '# 强制覆盖 DNS 为指定值（114.114.114.114 和 8.8.8.8）' \
+            '# ============================================' \
+            'echo ""' \
+            'echo "=== DNS Configuration ==="' \
+            'cat > /etc/resolv.conf << EOF' \
+            '# Generated by GudaoUI init script' \
+            'nameserver 114.114.114.114' \
+            'nameserver 8.8.8.8' \
+            'EOF' \
+            'echo "✅ DNS set to 114.114.114.114 and 8.8.8.8"' \
+            '' \
+            '# 显示网络状态' \
+            'echo ""' \
+            'echo "=== Network Status ==="' \
+            'ip addr show 2>/dev/null | grep -E "inet[^6]" || echo "No IP assigned"' \
+            'cat /etc/resolv.conf' \
+            'echo "========================"' \
             '' \
             'MEM_SIZE=$(grep MemTotal /proc/meminfo 2>/dev/null | awk '"'"'{print int($2/1024)}'"'"')' \
             '[ -z "$MEM_SIZE" ] && MEM_SIZE="Unknown"' \
@@ -485,7 +586,7 @@ jobs:
           chmod +x rootfs/init
           echo "root:x:0:0:root:/root:/bin/sh" > rootfs/etc/passwd
           echo "root:x:0:" > rootfs/etc/group
-          # 设置主 DNS 为 114.114.114.114，副 DNS 为 8.8.8.8
+          # 预设 DNS 文件
           printf '%s\n' 'nameserver 114.114.114.114' 'nameserver 8.8.8.8' > rootfs/etc/resolv.conf
           echo "127.0.0.1 localhost gudao-ui" > rootfs/etc/hosts
           printf '%s\n' \
@@ -627,8 +728,8 @@ jobs:
           body: |
             ## 🎉 GudaoUI Linux V1 with MicroPython (SquashFS + Overlay)
             ### 📦 包含组件
-            - Linux 内核 6.18 (虚拟机优化版，驱动模块化)
-            - BusyBox 1.36.1 (静态编译)
+            - Linux 内核 6.18 (虚拟机优化版，驱动模块化，**支持 DHCP 自动获取 IP**)
+            - BusyBox 1.36.1 (静态编译，包含 udhcpc DHCP 客户端)
             - **MicroPython v1.24.1** (从源码编译，静态链接，**启用 SSL 和加密库支持**)
             ### 💻 可用命令
             about - 显示系统信息
@@ -636,12 +737,12 @@ jobs:
             python - MicroPython 解释器 (可直接运行)
             reboot - 重启系统
             poweroff - 关闭系统
-            ### 🌐 网络配置
-            - 主 DNS: 114.114.114.114
-            - 副 DNS: 8.8.8.8
+            ### 🌐 网络配置（自动）
+            - **自动获取 IP（DHCP）**：系统启动后自动检测网卡并获取 IP
+            - **固定 DNS**：114.114.114.114 和 8.8.8.8（启动时强制写入 /etc/resolv.conf）
             - 内核已集成常见虚拟网卡驱动（作为模块）：
               VIRTIO_NET、VMXNET3、E1000、PCNET32、8139CP、8139TOO、E100、NE2K_PCI
-            - 系统启动时会自动加载上述驱动（已修复符号冲突问题）
+            - 系统启动时会自动加载驱动并通过 DHCP 获取 IP
             ### ⚡ 虚拟机优化
             已启用 VirtIO 驱动和 ACPI 电源管理
             ### 📀 文件系统架构
