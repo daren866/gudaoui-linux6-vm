@@ -481,7 +481,7 @@ jobs:
           ln -sf poweroff halt || true
           cd ../../..
 
-          # init 脚本（包含 DHCP 和固定 DNS）
+          # 优化后的 init 脚本（解决 DHCP 卡住问题）
           printf '%s\n' \
             '#!/bin/sh' \
             'export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin' \
@@ -498,14 +498,12 @@ jobs:
             '/bin/busybox echo "gudao-ui" > /proc/sys/kernel/hostname 2>/dev/null || true' \
             '/bin/busybox --install -s' \
             '' \
-            '# 加载内核模块（先加载 failover/net_failover 模块）' \
+            '# 加载内核模块' \
             'if [ -d /lib/modules ]; then' \
             '    echo "Loading kernel modules..."' \
             '    depmod -a 2>/dev/null' \
-            '    # 先加载依赖模块，避免符号冲突' \
             '    modprobe failover 2>/dev/null && echo "  Loaded failover" || true' \
             '    modprobe net_failover 2>/dev/null && echo "  Loaded net_failover" || true' \
-            '    # 再加载网卡驱动' \
             '    for mod in e1000 e100 pcnet32 8139cp 8139too ne2k-pci virtio_net vmxnet3; do' \
             '        modprobe $mod 2>/dev/null && echo "  Loaded $mod" || true' \
             '    done' \
@@ -516,11 +514,19 @@ jobs:
             '' \
             'sleep 2' \
             '' \
-            '# 尝试为每个接口获取 DHCP' \
+            '# 查找网络接口' \
+            'INTERFACES=$(ip link show | grep -E "^[0-9]+: (eth|ens|enp)" | cut -d: -f2 | tr -d " ")' \
+            'if [ -z "$INTERFACES" ]; then' \
+            '    echo "No network interfaces found, trying eth0"' \
+            '    INTERFACES="eth0"' \
+            'fi' \
+            '' \
             'CONFIGURED=0' \
-            'for iface in $(ip link show | grep -E "^[0-9]+: (eth|ens|enp)" | cut -d: -f2 | tr -d " "); do' \
-            '    echo "Configuring $iface via DHCP..."' \
-            '    if udhcpc -i "$iface" -s /usr/share/udhcpc/default.script -n -q -t 5 -T 2 2>/dev/null; then' \
+            'for iface in $INTERFACES; do' \
+            '    echo "Bringing up $iface..."' \
+            '    ip link set "$iface" up 2>/dev/null' \
+            '    echo "Starting DHCP on $iface (timeout ~6s)..."' \
+            '    if udhcpc -i "$iface" -s /usr/share/udhcpc/default.script -n -q -t 3 -T 2 2>/dev/null; then' \
             '        echo "✅ DHCP succeeded on $iface"' \
             '        CONFIGURED=1' \
             '        break' \
@@ -530,9 +536,7 @@ jobs:
             'done' \
             '' \
             'if [ $CONFIGURED -eq 0 ]; then' \
-            '    echo "No interface configured, trying eth0..."' \
-            '    ip link set eth0 up 2>/dev/null' \
-            '    udhcpc -i eth0 -s /usr/share/udhcpc/default.script -n -q -t 5 -T 2 2>/dev/null && CONFIGURED=1' \
+            '    echo "❌ Failed to obtain IP via DHCP"' \
             'fi' \
             '' \
             '# 强制写入固定 DNS' \
