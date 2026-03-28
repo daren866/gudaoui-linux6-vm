@@ -447,7 +447,7 @@ jobs:
           sudo mknod -m 660 rootfs/dev/tty2 c 4 2 || true
           sudo mknod -m 660 rootfs/dev/tty3 c 4 3 || true
           sudo mknod -m 660 rootfs/dev/tty4 c 4 4 || true
-          
+
           # 创建 about 命令
           cat > rootfs/usr/local/bin/about << 'EOF'
           #!/bin/sh
@@ -473,7 +473,7 @@ jobs:
           fi
           EOF
           chmod +x rootfs/usr/local/bin/about
-          
+
           # 创建 calc 命令
           cat > rootfs/usr/local/bin/calc << 'EOF'
           #!/bin/sh
@@ -492,7 +492,7 @@ jobs:
           fi
           EOF
           chmod +x rootfs/usr/local/bin/calc
-          
+
           # 创建 reboot 命令
           cat > rootfs/usr/local/bin/reboot << 'EOF'
           #!/bin/sh
@@ -501,7 +501,7 @@ jobs:
           /bin/busybox reboot -f
           EOF
           chmod +x rootfs/usr/local/bin/reboot
-          
+
           # 创建 poweroff 命令
           cat > rootfs/usr/local/bin/poweroff << 'EOF'
           #!/bin/sh
@@ -510,7 +510,7 @@ jobs:
           /bin/busybox poweroff -f
           EOF
           chmod +x rootfs/usr/local/bin/poweroff
-          
+
           cd rootfs/usr/bin
           ln -sf ../local/bin/about about || true
           ln -sf ../local/bin/calc calc || true
@@ -519,15 +519,13 @@ jobs:
           ln -sf poweroff halt || true
           cd ../../..
 
-          # 使用 heredoc 创建 init 脚本（避免引号转义问题）
+          # 创建 init 脚本 (使用 heredoc 避免转义问题)
           cat > rootfs/init << 'EOF'
           #!/bin/sh
-          
-          # 设置 PATH
+
           export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin
           export TERM=linux
-          
-          # 挂载必要的文件系统
+
           echo "Mounting filesystems..."
           /bin/busybox mount -t proc none /proc
           /bin/busybox mount -t sysfs none /sys
@@ -535,41 +533,27 @@ jobs:
           /bin/busybox mount -t tmpfs tmpfs /tmp
           /bin/busybox mount -t tmpfs tmpfs /run
           /bin/busybox mount -t tmpfs tmpfs /dev/shm
-          
-          # 创建必要的目录
+
           /bin/busybox mkdir -p /dev/shm /run/lock /etc/profile.d
-          
-          # 创建设备节点
           /bin/busybox mknod -m 660 /dev/tty1 c 4 1 2>/dev/null || true
           /bin/busybox mknod -m 660 /dev/tty2 c 4 2 2>/dev/null || true
-          
-          # 设置主机名
           /bin/busybox echo "gudao-ui" > /proc/sys/kernel/hostname 2>/dev/null || true
-          
-          # 安装 busybox
           /bin/busybox --install -s
-          
-          # 等待设备初始化
+
           sleep 2
-          
-          # 加载内核模块
+
           echo ""
           echo "=== Loading Kernel Modules ==="
           if [ -d /lib/modules ]; then
               echo "Loading network drivers..."
               depmod -a 2>/dev/null
-              # 加载 failover 模块
               modprobe failover 2>/dev/null && echo "  ✓ failover" || true
               modprobe net_failover 2>/dev/null && echo "  ✓ net_failover" || true
-              # 加载网卡驱动
               for mod in e1000 e100 pcnet32 8139cp 8139too ne2k-pci virtio_net vmxnet3; do
-                  if modprobe $mod 2>/dev/null; then
-                      echo "  ✓ $mod"
-                  fi
+                  modprobe $mod 2>/dev/null && echo "  ✓ $mod"
               done
           fi
-          
-          # 等待网络设备出现
+
           echo ""
           echo "=== Waiting for Network Interfaces ==="
           for i in $(seq 1 10); do
@@ -579,68 +563,46 @@ jobs:
               fi
               sleep 1
           done
-          
-          # 获取网络接口列表
+
           INTERFACES=$(ip link show 2>/dev/null | grep -E "^[0-9]+: (eth|ens|enp)" | cut -d: -f2 | tr -d " ")
-          if [ -z "$INTERFACES" ]; then
-              echo "  No network interfaces found, trying eth0"
-              INTERFACES="eth0"
-          fi
-          
+          [ -z "$INTERFACES" ] && INTERFACES="eth0"
           echo "  Found interfaces: $INTERFACES"
-          
-          # 启动 DHCP 客户端
+
           echo ""
           echo "=== DHCP Configuration ==="
           CONFIGURED=0
           for iface in $INTERFACES; do
               echo "  Configuring $iface..."
-              # 先启用网卡
               ip link set "$iface" up 2>/dev/null
-              # 等待链路建立
               sleep 2
-              # 启动 DHCP 客户端 (前台运行，设置超时)
-              echo "  Starting udhcpc on $iface (timeout 10s)..."
-              if udhcpc -i "$iface" -s /usr/share/udhcpc/default.script -n -q -t 5 -T 2 -A 5 2>&1; then
+              echo "  Starting udhcpc on $iface (timeout 12s)..."
+              if udhcpc -i "$iface" -s /usr/share/udhcpc/default.script -v -n -t 5 -T 2 -A 5 2>&1; then
                   echo "  ✅ DHCP succeeded on $iface"
                   CONFIGURED=1
                   break
               else
                   echo "  ⚠️ DHCP failed on $iface"
-                  # 如果 DHCP 失败，尝试设置静态 IP 作为备用
-                  echo "  Trying static IP fallback on $iface..."
+                  echo "  Trying static IP fallback (10.0.2.15/24)..."
                   ip addr add 10.0.2.15/24 dev "$iface" 2>/dev/null
                   ip link set "$iface" up 2>/dev/null
+                  ip route add default via 10.0.2.2 dev "$iface" 2>/dev/null
+                  echo "nameserver 8.8.8.8" > /etc/resolv.conf
+                  echo "nameserver 114.114.114.114" >> /etc/resolv.conf
+                  CONFIGURED=1
+                  break
               fi
           done
-          
-          # 显示网络状态
+
           echo ""
           echo "=== Network Status ==="
-          if ip addr show 2>/dev/null | grep -q "inet "; then
-              ip addr show 2>/dev/null | grep "inet " | while read line; do
-                  echo "  $line"
-              done
-          else
-              echo "  No IP address assigned"
-          fi
-          
-          # 确保 resolv.conf 存在（fallback）
-          if [ ! -f /etc/resolv.conf ] || [ ! -s /etc/resolv.conf ]; then
-              echo "  Creating fallback resolv.conf"
-              echo "nameserver 114.114.114.114" > /etc/resolv.conf
-              echo "nameserver 8.8.8.8" >> /etc/resolv.conf
-              echo "nameserver 223.5.5.5" >> /etc/resolv.conf
-          fi
-          
+          ip addr show 2>/dev/null | grep "inet " | sed 's/^/  /' || echo "  No IP assigned"
           echo "  DNS servers:"
-          cat /etc/resolv.conf | sed "s/^/    /"
+          cat /etc/resolv.conf 2>/dev/null | sed 's/^/    /' || echo "    none"
           echo "========================"
-          
-          # 显示系统信息
+
           MEM_SIZE=$(grep MemTotal /proc/meminfo 2>/dev/null | awk '{print int($2/1024)}')
           [ -z "$MEM_SIZE" ] && MEM_SIZE="Unknown"
-          
+
           clear
           echo "========================================"
           echo "     GudaoUI Linux V1"
@@ -659,10 +621,8 @@ jobs:
               PY_VERSION=$(python --version 2>&1)
               echo "${PY_VERSION}"
           fi
-          if ip addr show 2>/dev/null | grep -q "inet "; then
-              IP_ADDR=$(ip addr show 2>/dev/null | grep "inet " | head -1 | awk '{print $2}' | cut -d/ -f1)
-              echo "IP Address: ${IP_ADDR}"
-          fi
+          IP_ADDR=$(ip addr show 2>/dev/null | grep "inet " | head -1 | awk '{print $2}' | cut -d/ -f1)
+          [ -n "$IP_ADDR" ] && echo "IP Address: ${IP_ADDR}"
           echo ""
           echo "Welcome to GudaoUI Linux!"
           echo "========================================"
