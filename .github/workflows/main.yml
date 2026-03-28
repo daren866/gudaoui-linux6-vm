@@ -368,7 +368,7 @@ jobs:
       - name: Create rootfs (to be squashfs)
         run: |
           echo "📦 创建 rootfs 目录（将用于 squashfs）..."
-          mkdir -p rootfs/{bin,sbin,usr/bin,usr/sbin,usr/local/bin,etc,proc,sys,dev,lib,lib64,tmp,var,run,root,home,usr/share/udhcpc}
+          mkdir -p rootfs/{bin,sbin,usr/bin,usr/sbin,usr/local/bin,etc,proc,sys,dev,lib,lib64,tmp,var,run,root,home,usr/share/udhcpc,dev/shm}
           cp -a busybox-1.36.1/_install/* rootfs/
           cp -a python-root/* rootfs/
 
@@ -519,7 +519,7 @@ jobs:
           ln -sf poweroff halt || true
           cd ../../..
 
-          # 创建 init 脚本 (使用 heredoc 避免转义问题)
+          # 创建 init 脚本 (最终版本，包含最终静态 IP 保障)
           cat > rootfs/init << 'EOF'
           #!/bin/sh
 
@@ -532,6 +532,7 @@ jobs:
           /bin/busybox mount -t devtmpfs none /dev
           /bin/busybox mount -t tmpfs tmpfs /tmp
           /bin/busybox mount -t tmpfs tmpfs /run
+          /bin/busybox mkdir -p /dev/shm
           /bin/busybox mount -t tmpfs tmpfs /dev/shm
 
           /bin/busybox mkdir -p /dev/shm /run/lock /etc/profile.d
@@ -543,22 +544,14 @@ jobs:
           sleep 2
 
           echo ""
-          echo "=== Loading Kernel Modules ==="
-          if [ -d /lib/modules ]; then
-              echo "Loading network drivers..."
-              depmod -a 2>/dev/null
-              modprobe failover 2>/dev/null && echo "  ✓ failover" || true
-              modprobe net_failover 2>/dev/null && echo "  ✓ net_failover" || true
-              for mod in e1000 e100 pcnet32 8139cp 8139too ne2k-pci virtio_net vmxnet3; do
-                  modprobe $mod 2>/dev/null && echo "  ✓ $mod"
-              done
-          fi
-
-          echo ""
-          echo "=== Waiting for Network Interfaces ==="
-          for i in $(seq 1 10); do
-              if ip link show 2>/dev/null | grep -qE "eth[0-9]|ens[0-9]|enp[0-9]"; then
-                  echo "  Network interface detected after $i seconds"
+          echo "=== Network Interface Detection ==="
+          for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+              IFACES=$(ip link show 2>/dev/null | grep -E "^[0-9]+: (eth|ens|enp)" | cut -d: -f2 | tr -d " ")
+              if [ -n "$IFACES" ]; then
+                  echo "  Network interface(s) detected: $IFACES"
+                  for iface in $IFACES; do
+                      ip link set "$iface" up 2>/dev/null
+                  done
                   break
               fi
               sleep 1
@@ -566,7 +559,6 @@ jobs:
 
           INTERFACES=$(ip link show 2>/dev/null | grep -E "^[0-9]+: (eth|ens|enp)" | cut -d: -f2 | tr -d " ")
           [ -z "$INTERFACES" ] && INTERFACES="eth0"
-          echo "  Found interfaces: $INTERFACES"
 
           echo ""
           echo "=== DHCP Configuration ==="
@@ -574,9 +566,9 @@ jobs:
           for iface in $INTERFACES; do
               echo "  Configuring $iface..."
               ip link set "$iface" up 2>/dev/null
-              sleep 2
-              echo "  Starting udhcpc on $iface (timeout 12s)..."
-              if udhcpc -i "$iface" -s /usr/share/udhcpc/default.script -v -n -t 5 -T 2 -A 5 2>&1; then
+              sleep 3
+              echo "  Starting udhcpc on $iface (timeout 15s)..."
+              if udhcpc -i "$iface" -s /usr/share/udhcpc/default.script -n -t 8 -T 3 -A 8 2>&1; then
                   echo "  ✅ DHCP succeeded on $iface"
                   CONFIGURED=1
                   break
@@ -585,13 +577,31 @@ jobs:
                   echo "  Trying static IP fallback (10.0.2.15/24)..."
                   ip addr add 10.0.2.15/24 dev "$iface" 2>/dev/null
                   ip link set "$iface" up 2>/dev/null
-                  ip route add default via 10.0.2.2 dev "$iface" 2>/dev/null
+                  ip route add default via 10.0.2.2 dev "$iface" 2>/dev/null || true
                   echo "nameserver 8.8.8.8" > /etc/resolv.conf
                   echo "nameserver 114.114.114.114" >> /etc/resolv.conf
                   CONFIGURED=1
                   break
               fi
           done
+
+          # ===== 最终保障：如果仍然没有 IP，强制设置静态 IP =====
+          if ! ip addr show 2>/dev/null | grep -q "inet "; then
+              echo ""
+              echo "=== Final Fallback: Setting Static IP ==="
+              # 等网卡醒过来
+              sleep 2
+              # 给网卡配IP（虚拟机NAT模式固定是10.0.2.15）
+              ip addr add 10.0.2.15/24 dev eth0 2>/dev/null
+              # 把网卡叫醒
+              ip link set eth0 up
+              # 配网关
+              ip route add default via 10.0.2.2 2>/dev/null
+              # 配DNS
+              echo "nameserver 8.8.8.8" > /etc/resolv.conf
+              echo "  ✅ Static IP configured: 10.0.2.15/24"
+          fi
+          # ====================================================
 
           echo ""
           echo "=== Network Status ==="
@@ -640,7 +650,8 @@ jobs:
             'sysfs   /sys     sysfs   defaults    0 0' \
             'devtmpfs /dev    devtmpfs defaults  0 0' \
             'tmpfs   /tmp     tmpfs   defaults    0 0' \
-            'tmpfs   /run     tmpfs   defaults    0 0' > rootfs/etc/fstab
+            'tmpfs   /run     tmpfs   defaults    0 0' \
+            'tmpfs   /dev/shm tmpfs   defaults    0 0' > rootfs/etc/fstab
           printf '%s\n' \
             'export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin' \
             'export TERM=linux' \
