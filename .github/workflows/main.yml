@@ -369,7 +369,7 @@ jobs:
           echo "MicroPython 二进制大小: $(du -h python-root/usr/local/bin/micropython | cut -f1)"
           echo "Python 命令路径: $(ls -la python-root/usr/local/bin/python*)"
 
-      # 修复后的 tiny-curl 构建步骤（移除冲突的 --without-ssl）
+      # 静态编译 tiny-curl（所有依赖静态链接，使用 mbedtls，禁用非必要功能）
       - name: Build tiny-curl (static)
         run: |
           echo "🌐 下载 curl 源码..."
@@ -377,7 +377,6 @@ jobs:
           tar -xf curl-8.4.0.tar.gz
           cd curl-8.4.0
           echo "🔧 配置 curl (静态，精简功能，使用 mbedtls)..."
-          # 注意：--without-ssl 与 --with-mbedtls 冲突，已移除
           ./configure \
             --prefix=/usr \
             --disable-shared \
@@ -417,6 +416,7 @@ jobs:
             --disable-hsts \
             --disable-mqtt \
             --disable-websockets \
+            --without-zlib \
             CFLAGS="-Os -static" \
             LDFLAGS="-static"
           echo "🔨 编译 curl..."
