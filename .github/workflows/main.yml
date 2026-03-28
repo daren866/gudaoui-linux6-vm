@@ -369,65 +369,64 @@ jobs:
           echo "MicroPython 二进制大小: $(du -h python-root/usr/local/bin/micropython | cut -f1)"
           echo "Python 命令路径: $(ls -la python-root/usr/local/bin/python*)"
 
-      # 新增：编译 tiny-curl (静态，精简，支持 HTTPS)
-      - name: Build tiny-curl (static)
-        run: |
-          echo "🌐 下载 curl 源码..."
-          wget -q https://curl.se/download/curl-8.4.0.tar.gz
-          tar -xf curl-8.4.0.tar.gz
-          cd curl-8.4.0
-          echo "🔧 配置 curl (静态，精简功能，使用 mbedtls)..."
-          ./configure \
-            --prefix=/usr \
-            --disable-shared \
-            --enable-static \
-            --with-mbedtls \
-            --without-ssl \
-            --without-libssh2 \
-            --without-librtmp \
-            --without-libidn2 \
-            --without-brotli \
-            --without-zstd \
-            --without-libpsl \
-            --disable-ldap \
-            --disable-ldaps \
-            --disable-rtsp \
-            --disable-dict \
-            --disable-telnet \
-            --disable-tftp \
-            --disable-pop3 \
-            --disable-imap \
-            --disable-smtp \
-            --disable-gopher \
-            --disable-file \
-            --disable-manual \
-            --disable-ipv6 \
-            --disable-versioned-symbols \
-            --disable-verbose \
-            --disable-ares \
-            --disable-cookies \
-            --disable-dateparse \
-            --disable-dnsshuffle \
-            --disable-get-easy-options \
-            --disable-progress-meter \
-            --disable-proxy \
-            --disable-tls-srp \
-            --disable-unix-sockets \
-            --disable-alt-svc \
-            --disable-hsts \
-            --disable-mqtt \
-            --disable-websockets \
-            CFLAGS="-Os -static" \
-            LDFLAGS="-static"
-          echo "🔨 编译 curl..."
-          make -j$(nproc)
-          echo "📦 安装 curl 到临时目录..."
-          make install DESTDIR=$(pwd)/../curl-install
-          cd ..
-          echo "✅ curl 编译完成，二进制大小: $(du -h curl-install/usr/bin/curl | cut -f1)"
-          # 验证静态链接
-          file curl-install/usr/bin/curl | grep "statically linked" || echo "⚠️ curl 未完全静态链接"
-
+            - name: Build tiny-curl (static)
+              run: |
+                echo "🌐 下载 curl 源码..."
+                wget -q https://curl.se/download/curl-8.4.0.tar.gz
+                tar -xf curl-8.4.0.tar.gz
+                cd curl-8.4.0
+                echo "🔧 配置 curl (静态，精简功能，使用 mbedtls)..."
+                # 注意：--without-ssl 与 --with-mbedtls 冲突，已移除
+                ./configure \
+                  --prefix=/usr \
+                  --disable-shared \
+                  --enable-static \
+                  --with-mbedtls \
+                  --without-libssh2 \
+                  --without-librtmp \
+                  --without-libidn2 \
+                  --without-brotli \
+                  --without-zstd \
+                  --without-libpsl \
+                  --disable-ldap \
+                  --disable-ldaps \
+                  --disable-rtsp \
+                  --disable-dict \
+                  --disable-telnet \
+                  --disable-tftp \
+                  --disable-pop3 \
+                  --disable-imap \
+                  --disable-smtp \
+                  --disable-gopher \
+                  --disable-file \
+                  --disable-manual \
+                  --disable-ipv6 \
+                  --disable-versioned-symbols \
+                  --disable-verbose \
+                  --disable-ares \
+                  --disable-cookies \
+                  --disable-dateparse \
+                  --disable-dnsshuffle \
+                  --disable-get-easy-options \
+                  --disable-progress-meter \
+                  --disable-proxy \
+                  --disable-tls-srp \
+                  --disable-unix-sockets \
+                  --disable-alt-svc \
+                  --disable-hsts \
+                  --disable-mqtt \
+                  --disable-websockets \
+                  CFLAGS="-Os -static" \
+                  LDFLAGS="-static"
+                echo "🔨 编译 curl..."
+                make -j$(nproc)
+                echo "📦 安装 curl 到临时目录..."
+                make install DESTDIR=$(pwd)/../curl-install
+                cd ..
+                echo "✅ curl 编译完成，二进制大小: $(du -h curl-install/usr/bin/curl | cut -f1)"
+                # 验证静态链接
+                file curl-install/usr/bin/curl | grep "statically linked" || echo "⚠️ curl 未完全静态链接"
+          
       - name: Create rootfs (to be squashfs)
         run: |
           echo "📦 创建 rootfs 目录（将用于 squashfs）..."
