@@ -99,7 +99,11 @@ jobs:
             dosfstools \
             git \
             pkg-config \
-            squashfs-tools
+            squashfs-tools \
+            zlib1g-dev \
+            autoconf \
+            automake \
+            libtool
 
       - name: Install libmbedtls-dev
         run: |
@@ -365,12 +369,74 @@ jobs:
           echo "MicroPython 二进制大小: $(du -h python-root/usr/local/bin/micropython | cut -f1)"
           echo "Python 命令路径: $(ls -la python-root/usr/local/bin/python*)"
 
+      # 新增：编译 tiny-curl (静态，精简，支持 HTTPS)
+      - name: Build tiny-curl (static)
+        run: |
+          echo "🌐 下载 curl 源码..."
+          wget -q https://curl.se/download/curl-8.4.0.tar.gz
+          tar -xf curl-8.4.0.tar.gz
+          cd curl-8.4.0
+          echo "🔧 配置 curl (静态，精简功能，使用 mbedtls)..."
+          ./configure \
+            --prefix=/usr \
+            --disable-shared \
+            --enable-static \
+            --with-mbedtls \
+            --without-ssl \
+            --without-libssh2 \
+            --without-librtmp \
+            --without-libidn2 \
+            --without-brotli \
+            --without-zstd \
+            --without-libpsl \
+            --disable-ldap \
+            --disable-ldaps \
+            --disable-rtsp \
+            --disable-dict \
+            --disable-telnet \
+            --disable-tftp \
+            --disable-pop3 \
+            --disable-imap \
+            --disable-smtp \
+            --disable-gopher \
+            --disable-file \
+            --disable-manual \
+            --disable-ipv6 \
+            --disable-versioned-symbols \
+            --disable-verbose \
+            --disable-ares \
+            --disable-cookies \
+            --disable-dateparse \
+            --disable-dnsshuffle \
+            --disable-get-easy-options \
+            --disable-progress-meter \
+            --disable-proxy \
+            --disable-tls-srp \
+            --disable-unix-sockets \
+            --disable-alt-svc \
+            --disable-hsts \
+            --disable-mqtt \
+            --disable-websockets \
+            CFLAGS="-Os -static" \
+            LDFLAGS="-static"
+          echo "🔨 编译 curl..."
+          make -j$(nproc)
+          echo "📦 安装 curl 到临时目录..."
+          make install DESTDIR=$(pwd)/../curl-install
+          cd ..
+          echo "✅ curl 编译完成，二进制大小: $(du -h curl-install/usr/bin/curl | cut -f1)"
+          # 验证静态链接
+          file curl-install/usr/bin/curl | grep "statically linked" || echo "⚠️ curl 未完全静态链接"
+
       - name: Create rootfs (to be squashfs)
         run: |
           echo "📦 创建 rootfs 目录（将用于 squashfs）..."
           mkdir -p rootfs/{bin,sbin,usr/bin,usr/sbin,usr/local/bin,etc,proc,sys,dev,lib,lib64,tmp,var,run,root,home,usr/share/udhcpc,dev/shm}
           cp -a busybox-1.36.1/_install/* rootfs/
           cp -a python-root/* rootfs/
+          # 复制 curl 二进制
+          cp -a curl-install/usr/bin/curl rootfs/usr/bin/
+          chmod 755 rootfs/usr/bin/curl
 
           # 创建 udhcpc 默认脚本
           cat > rootfs/usr/share/udhcpc/default.script << 'EOF'
@@ -463,6 +529,7 @@ jobs:
           echo "  about     - Show this information"
           echo "  calc      - Simple calculator"
           echo "  python    - MicroPython interpreter"
+          echo "  curl      - HTTP client"
           echo "  reboot    - Restart system"
           echo "  poweroff  - Shutdown system"
           echo ""
@@ -470,6 +537,9 @@ jobs:
               echo "MicroPython: $(python --version 2>&1)"
           else
               echo "MicroPython: Not available"
+          fi
+          if command -v curl >/dev/null 2>&1; then
+              echo "curl: $(curl --version | head -n1)"
           fi
           EOF
           chmod +x rootfs/usr/local/bin/about
@@ -622,6 +692,7 @@ jobs:
           echo "  about     - System information"
           echo "  calc      - Calculator (e.g., calc 1+1)"
           echo "  python    - MicroPython interpreter"
+          echo "  curl      - HTTP client (supports HTTPS)"
           echo "  reboot    - Restart system"
           echo "  poweroff  - Shutdown system"
           echo ""
@@ -630,6 +701,10 @@ jobs:
           if command -v python >/dev/null 2>&1; then
               PY_VERSION=$(python --version 2>&1)
               echo "${PY_VERSION}"
+          fi
+          if command -v curl >/dev/null 2>&1; then
+              CURL_VERSION=$(curl --version 2>&1 | head -n1)
+              echo "${CURL_VERSION}"
           fi
           IP_ADDR=$(ip addr show 2>/dev/null | grep "inet " | head -1 | awk '{print $2}' | cut -d/ -f1)
           [ -n "$IP_ADDR" ] && echo "IP Address: ${IP_ADDR}"
@@ -758,7 +833,7 @@ jobs:
           printf '%s\n' \
             'set default=0' \
             'set timeout=3' \
-            'menuentry "GudaoUI Linux V1 with MicroPython (SquashFS+Overlay)" {' \
+            'menuentry "GudaoUI Linux V1 with MicroPython & curl (SquashFS+Overlay)" {' \
             '  linux /boot/vmlinuz quiet' \
             '  initrd /boot/initramfs.cpio.gz' \
             '}' \
@@ -783,17 +858,19 @@ jobs:
           name: ${{ steps.set-release-info.outputs.release_title }}
           tag_name: ${{ steps.set-release-info.outputs.release_tag }}
           body: |
-            ## 🎉 GudaoUI Linux V1 with MicroPython (SquashFS + Overlay)
+            ## 🎉 GudaoUI Linux V1 with MicroPython & curl (SquashFS + Overlay)
             ### 📦 包含组件
             - Linux 内核 6.18 (虚拟机优化版，驱动模块化，**支持 DHCP 自动获取 IP**)
             - BusyBox 1.36.1 (静态编译，包含 udhcpc DHCP 客户端)
             - **MicroPython v1.24.1** (从源码编译，静态链接，**启用 SSL 和加密库支持**)
+            - **curl 8.4.0** (静态编译，精简版，**支持 HTTPS (mbedtls)**)
             ### 💻 可用命令
-            about - 显示系统信息
-            calc - 简单计算器 (如: calc 1+1)
-            python - MicroPython 解释器 (可直接运行)
-            reboot - 重启系统
-            poweroff - 关闭系统
+            about   - 显示系统信息
+            calc    - 简单计算器 (如: calc 1+1)
+            python  - MicroPython 解释器
+            curl    - HTTP 客户端 (支持 HTTPS)
+            reboot  - 重启系统
+            poweroff- 关闭系统
             ### 🌐 网络配置（自动）
             - **自动获取 IP（DHCP）**：系统启动后自动检测网卡并获取 IP
             - **固定 DNS**：114.114.114.114、8.8.8.8、223.5.5.5（启动时强制写入 /etc/resolv.conf）
@@ -809,6 +886,7 @@ jobs:
             - 构建时间: $(date '+%Y-%m-%d %H:%M:%S')
             - ISO 大小: $(du -h ${{ steps.set-release-info.outputs.iso_name }} | cut -f1)
             - MicroPython 大小: ~300KB (静态链接，包含 SSL)
+            - curl 大小: ~1.5MB (静态链接，支持 HTTPS)
           files: ${{ steps.set-release-info.outputs.iso_name }}
           draft: false
           prerelease: false
