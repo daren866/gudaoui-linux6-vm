@@ -519,7 +519,7 @@ jobs:
           ln -sf poweroff halt || true
           cd ../../..
 
-          # 创建 init 脚本 (增强 DHCP 稳定性)
+          # 创建 init 脚本 (使用 heredoc 避免转义问题)
           cat > rootfs/init << 'EOF'
           #!/bin/sh
 
@@ -540,7 +540,6 @@ jobs:
           /bin/busybox echo "gudao-ui" > /proc/sys/kernel/hostname 2>/dev/null || true
           /bin/busybox --install -s
 
-          # 等待设备初始化
           sleep 2
 
           echo ""
@@ -551,33 +550,20 @@ jobs:
               modprobe failover 2>/dev/null && echo "  ✓ failover" || true
               modprobe net_failover 2>/dev/null && echo "  ✓ net_failover" || true
               for mod in e1000 e100 pcnet32 8139cp 8139too ne2k-pci virtio_net vmxnet3; do
-                  if modprobe $mod 2>/dev/null; then
-                      echo "  ✓ $mod"
-                  fi
+                  modprobe $mod 2>/dev/null && echo "  ✓ $mod"
               done
           fi
 
           echo ""
           echo "=== Waiting for Network Interfaces ==="
-          # 等待网卡出现并UP，处理STP延迟
-          for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
-              # 获取所有可能的接口
-              IFACES=$(ip link show 2>/dev/null | grep -E "^[0-9]+: (eth|ens|enp)" | cut -d: -f2 | tr -d " ")
-              if [ -n "$IFACES" ]; then
-                  # 尝试将每个接口设为UP
-                  for iface in $IFACES; do
-                      ip link set "$iface" up 2>/dev/null
-                  done
-                  # 检查是否有接口已经是UP状态
-                  if ip link show 2>/dev/null | grep -qE "state UP"; then
-                      echo "  Network interface active after $i seconds"
-                      break
-                  fi
+          for i in $(seq 1 10); do
+              if ip link show 2>/dev/null | grep -qE "eth[0-9]|ens[0-9]|enp[0-9]"; then
+                  echo "  Network interface detected after $i seconds"
+                  break
               fi
-              sleep 2
+              sleep 1
           done
 
-          # 获取实际接口列表
           INTERFACES=$(ip link show 2>/dev/null | grep -E "^[0-9]+: (eth|ens|enp)" | cut -d: -f2 | tr -d " ")
           [ -z "$INTERFACES" ] && INTERFACES="eth0"
           echo "  Found interfaces: $INTERFACES"
@@ -588,21 +574,18 @@ jobs:
           for iface in $INTERFACES; do
               echo "  Configuring $iface..."
               ip link set "$iface" up 2>/dev/null
-              # 等待链路建立（重要：给交换机STP留出时间）
-              sleep 3
-              echo "  Starting udhcpc on $iface (timeout 15s)..."
-              # 使用更激进的超时参数，同时输出调试信息
-              if udhcpc -i "$iface" -s /usr/share/udhcpc/default.script -v -n -t 8 -T 3 -A 8 2>&1; then
+              sleep 2
+              echo "  Starting udhcpc on $iface (timeout 12s)..."
+              if udhcpc -i "$iface" -s /usr/share/udhcpc/default.script -v -n -t 5 -T 2 -A 5 2>&1; then
                   echo "  ✅ DHCP succeeded on $iface"
                   CONFIGURED=1
                   break
               else
                   echo "  ⚠️ DHCP failed on $iface"
-                  # 尝试静态 IP fallback（常见虚拟机 NAT 网络）
                   echo "  Trying static IP fallback (10.0.2.15/24)..."
                   ip addr add 10.0.2.15/24 dev "$iface" 2>/dev/null
                   ip link set "$iface" up 2>/dev/null
-                  ip route add default via 10.0.2.2 dev "$iface" 2>/dev/null || true
+                  ip route add default via 10.0.2.2 dev "$iface" 2>/dev/null
                   echo "nameserver 8.8.8.8" > /etc/resolv.conf
                   echo "nameserver 114.114.114.114" >> /etc/resolv.conf
                   CONFIGURED=1
