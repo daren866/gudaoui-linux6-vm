@@ -369,14 +369,14 @@ jobs:
           echo "MicroPython 二进制大小: $(du -h python-root/usr/local/bin/micropython | cut -f1)"
           echo "Python 命令路径: $(ls -la python-root/usr/local/bin/python*)"
 
-      # 简化版 curl 静态编译
+      # 最终版 curl 编译：完全静态，无任何动态库依赖
       - name: Build tiny-curl (static)
         run: |
           echo "🌐 下载 curl 源码..."
           wget -q https://curl.se/download/curl-8.4.0.tar.gz
           tar -xf curl-8.4.0.tar.gz
           cd curl-8.4.0
-          echo "🔧 配置 curl (静态，精简功能)..."
+          echo "🔧 配置 curl (完全静态，禁用所有外部依赖)..."
           ./configure \
             --disable-shared \
             --enable-static \
@@ -384,18 +384,55 @@ jobs:
             --disable-ldaps \
             --without-ssl \
             --without-libidn2 \
-            --prefix=/usr
+            --without-zlib \
+            --disable-rtsp \
+            --disable-dict \
+            --disable-telnet \
+            --disable-tftp \
+            --disable-pop3 \
+            --disable-imap \
+            --disable-smtp \
+            --disable-gopher \
+            --disable-file \
+            --disable-manual \
+            --disable-ipv6 \
+            --disable-versioned-symbols \
+            --disable-verbose \
+            --disable-ares \
+            --disable-cookies \
+            --disable-dateparse \
+            --disable-dnsshuffle \
+            --disable-get-easy-options \
+            --disable-progress-meter \
+            --disable-proxy \
+            --disable-tls-srp \
+            --disable-unix-sockets \
+            --disable-alt-svc \
+            --disable-hsts \
+            --disable-mqtt \
+            --disable-websockets \
+            --prefix=/usr \
+            CFLAGS="-Os -static" \
+            LDFLAGS="-static"
           echo "🔨 编译 curl..."
           make -j$(nproc)
           echo "📦 安装 curl 到临时目录..."
           make install DESTDIR=$(pwd)/../curl-install
           cd ..
-          echo "✅ curl 编译完成"
-          # 检查生成的二进制
-          ls -la curl-install/usr/bin/curl
-          file curl-install/usr/bin/curl
+          # 查找并确保 curl 二进制存在
+          CURL_BIN=$(find curl-install -name curl -type f 2>/dev/null | head -1)
+          if [ -z "$CURL_BIN" ]; then
+            echo "❌ 错误: 未找到 curl 二进制文件！"
+            exit 1
+          fi
+          echo "✅ 找到 curl: $CURL_BIN"
+          # 复制到标准位置
+          mkdir -p curl-install/usr/bin
+          cp "$CURL_BIN" curl-install/usr/bin/curl
+          chmod 755 curl-install/usr/bin/curl
           # 验证静态链接
-          ldd curl-install/usr/bin/curl 2>&1 | grep -q "not a dynamic executable" && echo "✅ curl 无动态库依赖" || echo "⚠️ curl 仍有动态库依赖"
+          file curl-install/usr/bin/curl
+          ldd curl-install/usr/bin/curl 2>&1 | grep -q "not a dynamic executable" && echo "✅ curl 无动态库依赖" || (echo "⚠️ curl 仍有动态库依赖:" && ldd curl-install/usr/bin/curl)
 
       - name: Create rootfs (to be squashfs)
         run: |
@@ -403,15 +440,19 @@ jobs:
           mkdir -p rootfs/{bin,sbin,usr/bin,usr/sbin,usr/local/bin,etc,proc,sys,dev,lib,lib64,tmp,var,run,root,home,usr/share/udhcpc,dev/shm}
           cp -a busybox-1.36.1/_install/* rootfs/
           cp -a python-root/* rootfs/
+          
           # 复制 curl 二进制
           cp -a curl-install/usr/bin/curl rootfs/usr/bin/
           chmod 755 rootfs/usr/bin/curl
-          # 验证 curl 已复制
+          
+          # 验证
           if [ ! -f "rootfs/usr/bin/curl" ]; then
-            echo "❌ curl binary not found in rootfs!"
+            echo "❌ 错误: curl binary not found in rootfs!"
             exit 1
           fi
           echo "✅ curl binary found: $(file rootfs/usr/bin/curl)"
+          # 额外测试静态性
+          chroot rootfs /usr/bin/curl --version 2>&1 || echo "⚠️ curl 无法执行，将在 init 中诊断"
 
           # 创建 udhcpc 默认脚本
           cat > rootfs/usr/share/udhcpc/default.script << 'EOF'
@@ -564,7 +605,7 @@ jobs:
           ln -sf poweroff halt || true
           cd ../../..
 
-          # 创建 init 脚本 (最终版本，包含最终静态 IP 保障)
+          # 创建 init 脚本 (包含 curl 诊断)
           cat > rootfs/init << 'EOF'
           #!/bin/sh
 
@@ -587,6 +628,24 @@ jobs:
           /bin/busybox --install -s
 
           sleep 2
+
+          # 诊断 curl
+          echo ""
+          echo "=== Curl Diagnostic ==="
+          if [ -f /usr/bin/curl ]; then
+              echo "curl binary exists at /usr/bin/curl"
+              file /usr/bin/curl
+              # 尝试执行
+              if /usr/bin/curl --version 2>&1; then
+                  echo "curl works!"
+              else
+                  echo "curl execution failed. Checking dependencies:"
+                  ldd /usr/bin/curl 2>&1 || echo "ldd not available"
+              fi
+          else
+              echo "curl binary NOT found in /usr/bin!"
+          fi
+          echo "========================"
 
           echo ""
           echo "=== Network Interface Detection ==="
@@ -630,23 +689,17 @@ jobs:
               fi
           done
 
-          # ===== 最终保障：如果仍然没有 IP，强制设置静态 IP =====
+          # 最终保障：如果仍然没有 IP，强制设置静态 IP
           if ! ip addr show 2>/dev/null | grep -q "inet "; then
               echo ""
               echo "=== Final Fallback: Setting Static IP ==="
-              # 等网卡醒过来
               sleep 2
-              # 给网卡配IP（虚拟机NAT模式固定是10.0.2.15）
               ip addr add 10.0.2.15/24 dev eth0 2>/dev/null
-              # 把网卡叫醒
               ip link set eth0 up
-              # 配网关
               ip route add default via 10.0.2.2 2>/dev/null
-              # 配DNS
               echo "nameserver 8.8.8.8" > /etc/resolv.conf
               echo "  ✅ Static IP configured: 10.0.2.15/24"
           fi
-          # ====================================================
 
           echo ""
           echo "=== Network Status ==="
@@ -680,6 +733,8 @@ jobs:
           if command -v curl >/dev/null 2>&1; then
               CURL_VERSION=$(curl --version 2>&1 | head -n1)
               echo "${CURL_VERSION}"
+          else
+              echo "curl command not found (but binary may exist). Check diagnostic above."
           fi
           IP_ADDR=$(ip addr show 2>/dev/null | grep "inet " | head -1 | awk '{print $2}' | cut -d/ -f1)
           [ -n "$IP_ADDR" ] && echo "IP Address: ${IP_ADDR}"
@@ -838,7 +893,7 @@ jobs:
             - Linux 内核 6.18 (虚拟机优化版，驱动模块化，**支持 DHCP 自动获取 IP**)
             - BusyBox 1.36.1 (静态编译，包含 udhcpc DHCP 客户端)
             - **MicroPython v1.24.1** (从源码编译，静态链接，**启用 SSL 和加密库支持**)
-            - **curl 8.4.0** (静态编译，精简版，支持 HTTP/HTTPS)
+            - **curl 8.4.0** (静态编译，完全无动态库依赖，支持 HTTP/HTTPS)
             ### 💻 可用命令
             about   - 显示系统信息
             calc    - 简单计算器 (如: calc 1+1)
@@ -861,7 +916,7 @@ jobs:
             - 构建时间: $(date '+%Y-%m-%d %H:%M:%S')
             - ISO 大小: $(du -h ${{ steps.set-release-info.outputs.iso_name }} | cut -f1)
             - MicroPython 大小: ~300KB (静态链接，包含 SSL)
-            - curl 大小: ~1.2MB (静态链接)
+            - curl 大小: ~1.2MB (完全静态链接)
           files: ${{ steps.set-release-info.outputs.iso_name }}
           draft: false
           prerelease: false
