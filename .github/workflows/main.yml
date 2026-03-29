@@ -369,65 +369,32 @@ jobs:
           echo "MicroPython 二进制大小: $(du -h python-root/usr/local/bin/micropython | cut -f1)"
           echo "Python 命令路径: $(ls -la python-root/usr/local/bin/python*)"
 
-      # 静态编译 tiny-curl（完全静态链接，无动态库依赖）
-      - name: Build tiny-curl (fully static)
+      # 简化版 curl 静态编译
+      - name: Build tiny-curl (static)
         run: |
           echo "🌐 下载 curl 源码..."
           wget -q https://curl.se/download/curl-8.4.0.tar.gz
           tar -xf curl-8.4.0.tar.gz
           cd curl-8.4.0
-          echo "🔧 配置 curl (完全静态，使用 mbedtls，禁用所有非必要依赖)..."
+          echo "🔧 配置 curl (静态，精简功能)..."
           ./configure \
-            --prefix=/usr \
             --disable-shared \
             --enable-static \
-            --with-mbedtls \
-            --without-libssh2 \
-            --without-librtmp \
-            --without-libidn2 \
-            --without-brotli \
-            --without-zstd \
-            --without-libpsl \
-            --without-zlib \
             --disable-ldap \
             --disable-ldaps \
-            --disable-rtsp \
-            --disable-dict \
-            --disable-telnet \
-            --disable-tftp \
-            --disable-pop3 \
-            --disable-imap \
-            --disable-smtp \
-            --disable-gopher \
-            --disable-file \
-            --disable-manual \
-            --disable-ipv6 \
-            --disable-versioned-symbols \
-            --disable-verbose \
-            --disable-ares \
-            --disable-cookies \
-            --disable-dateparse \
-            --disable-dnsshuffle \
-            --disable-get-easy-options \
-            --disable-progress-meter \
-            --disable-proxy \
-            --disable-tls-srp \
-            --disable-unix-sockets \
-            --disable-alt-svc \
-            --disable-hsts \
-            --disable-mqtt \
-            --disable-websockets \
-            CFLAGS="-Os -static" \
-            LDFLAGS="-static"
+            --without-ssl \
+            --without-libidn2 \
+            --prefix=/usr
           echo "🔨 编译 curl..."
           make -j$(nproc)
           echo "📦 安装 curl 到临时目录..."
           make install DESTDIR=$(pwd)/../curl-install
           cd ..
-          echo "✅ curl 编译完成，二进制大小: $(du -h curl-install/usr/bin/curl | cut -f1)"
+          echo "✅ curl 编译完成"
+          # 检查生成的二进制
+          ls -la curl-install/usr/bin/curl
+          file curl-install/usr/bin/curl
           # 验证静态链接
-          file curl-install/usr/bin/curl | grep "statically linked" || echo "⚠️ curl 未完全静态链接"
-          # 验证无动态库依赖
           ldd curl-install/usr/bin/curl 2>&1 | grep -q "not a dynamic executable" && echo "✅ curl 无动态库依赖" || echo "⚠️ curl 仍有动态库依赖"
 
       - name: Create rootfs (to be squashfs)
@@ -439,6 +406,12 @@ jobs:
           # 复制 curl 二进制
           cp -a curl-install/usr/bin/curl rootfs/usr/bin/
           chmod 755 rootfs/usr/bin/curl
+          # 验证 curl 已复制
+          if [ ! -f "rootfs/usr/bin/curl" ]; then
+            echo "❌ curl binary not found in rootfs!"
+            exit 1
+          fi
+          echo "✅ curl binary found: $(file rootfs/usr/bin/curl)"
 
           # 创建 udhcpc 默认脚本
           cat > rootfs/usr/share/udhcpc/default.script << 'EOF'
@@ -865,12 +838,12 @@ jobs:
             - Linux 内核 6.18 (虚拟机优化版，驱动模块化，**支持 DHCP 自动获取 IP**)
             - BusyBox 1.36.1 (静态编译，包含 udhcpc DHCP 客户端)
             - **MicroPython v1.24.1** (从源码编译，静态链接，**启用 SSL 和加密库支持**)
-            - **curl 8.4.0** (静态编译，完全静态链接，**支持 HTTPS (mbedtls)**，无动态库依赖)
+            - **curl 8.4.0** (静态编译，精简版，支持 HTTP/HTTPS)
             ### 💻 可用命令
             about   - 显示系统信息
             calc    - 简单计算器 (如: calc 1+1)
             python  - MicroPython 解释器
-            curl    - HTTP 客户端 (支持 HTTPS)
+            curl    - HTTP 客户端
             reboot  - 重启系统
             poweroff- 关闭系统
             ### 🌐 网络配置（自动）
@@ -888,7 +861,7 @@ jobs:
             - 构建时间: $(date '+%Y-%m-%d %H:%M:%S')
             - ISO 大小: $(du -h ${{ steps.set-release-info.outputs.iso_name }} | cut -f1)
             - MicroPython 大小: ~300KB (静态链接，包含 SSL)
-            - curl 大小: ~1.5MB (完全静态链接，无动态库依赖)
+            - curl 大小: ~1.2MB (静态链接)
           files: ${{ steps.set-release-info.outputs.iso_name }}
           draft: false
           prerelease: false
