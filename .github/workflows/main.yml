@@ -108,6 +108,7 @@ jobs:
             libelf-dev \
             bc \
             wget \
+            curl \
             cpio \
             xorriso \
             grub-pc-bin \
@@ -128,7 +129,8 @@ jobs:
         if: steps.kernel-cache.outputs.cache-hit != 'true'
         run: |
           echo "📥 下载内核源码..."
-          wget -q https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.tar.xz
+          wget -q --tries=5 --timeout=30 https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.tar.xz || \
+          curl -L -o linux-6.18.tar.xz https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.tar.xz
           tar -xf linux-6.18.tar.xz
 
       - name: Configure kernel
@@ -157,7 +159,6 @@ jobs:
           
           make olddefconfig
           
-          # 强制模块配置
           sed -i 's/^CONFIG_FAILOVER=.*/CONFIG_FAILOVER=m/' .config
           sed -i 's/^CONFIG_NET_FAILOVER=.*/CONFIG_NET_FAILOVER=m/' .config
           sed -i 's/^CONFIG_VIRTIO_NET=.*/CONFIG_VIRTIO_NET=m/' .config
@@ -199,18 +200,19 @@ jobs:
         if: steps.busybox-cache.outputs.cache-hit != 'true'
         run: |
           echo "📥 下载 BusyBox..."
-          wget -q https://busybox.net/downloads/busybox-1.36.1.tar.bz2
+          # 重试机制 + curl 备选
+          wget -q --tries=5 --timeout=30 https://busybox.net/downloads/busybox-1.36.1.tar.bz2 || \
+          curl -L -o busybox-1.36.1.tar.bz2 https://busybox.net/downloads/busybox-1.36.1.tar.bz2
           tar -xf busybox-1.36.1.tar.bz2
+          echo "✅ BusyBox 下载完成"
 
       - name: Configure BusyBox
         if: steps.busybox-cache.outputs.cache-hit != 'true'
         run: |
           cd busybox-1.36.1
           echo "🔧 配置 BusyBox..."
-          # 使用 allnoconfig 最小化配置，避免交互提示
           make allnoconfig
           
-          # 直接追加我们需要的选项到 .config
           cat >> .config << 'EOF'
           CONFIG_STATIC=y
           CONFIG_ASH=y
@@ -470,9 +472,7 @@ jobs:
           CONFIG_ZCIP=y
           EOF
           
-          # 使用 yes 命令自动应答所有交互提示，确保非交互式
           yes "" | make oldconfig
-          
           echo "✅ BusyBox 配置完成"
 
       - name: Build BusyBox
@@ -490,7 +490,8 @@ jobs:
       - name: Build static curl (standalone)
         run: |
           echo "🌐 编译独立静态 curl..."
-          wget -q https://curl.se/download/curl-8.4.0.tar.gz
+          wget -q --tries=5 --timeout=30 https://curl.se/download/curl-8.4.0.tar.gz || \
+          curl -L -o curl-8.4.0.tar.gz https://curl.se/download/curl-8.4.0.tar.gz
           tar -xf curl-8.4.0.tar.gz
           cd curl-8.4.0
           ./configure \
