@@ -62,34 +62,42 @@ jobs:
         uses: actions/cache@v4
         id: kernel-cache
         with:
-          path: linux-6.18
+          path: |
+            linux-6.18
+            !linux-6.18/.git
           key: kernel-6.18-${{ steps.cache-keys.outputs.kernel_hash }}
-          restore-keys: kernel-6.18-
+          restore-keys: |
+            kernel-6.18-
 
       - name: Cache busybox build
         uses: actions/cache@v4
         id: busybox-cache
         with:
-          path: busybox-1.36.1
+          path: |
+            busybox-1.36.1
+            !busybox-1.36.1/.git
           key: busybox-1.36.1-${{ steps.cache-keys.outputs.busybox_hash }}
-          restore-keys: busybox-1.36.1-
+          restore-keys: |
+            busybox-1.36.1-
 
       - name: Check cache status
         run: |
           echo "## 🔍 缓存状态" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          
           echo "### 内核缓存" >> $GITHUB_STEP_SUMMARY
           if [[ "${{ steps.kernel-cache.outputs.cache-hit }}" == "true" ]]; then
             echo "✅ **内核缓存命中！**" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ **内核缓存未命中**" >> $GITHUB_STEP_SUMMARY
+            echo "❌ **内核缓存未命中**（首次运行正常现象）" >> $GITHUB_STEP_SUMMARY
           fi
+          
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### BusyBox 缓存" >> $GITHUB_STEP_SUMMARY
           if [[ "${{ steps.busybox-cache.outputs.cache-hit }}" == "true" ]]; then
             echo "✅ **BusyBox 缓存命中！**" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ **BusyBox 缓存未命中**" >> $GITHUB_STEP_SUMMARY
+            echo "❌ **BusyBox 缓存未命中**（首次运行正常现象）" >> $GITHUB_STEP_SUMMARY
           fi
 
       - name: Install dependencies
@@ -121,44 +129,29 @@ jobs:
 
       - name: Install libmbedtls-dev
         run: |
-          echo "🔐 安装 mbedtls 开发库..."
-          sudo apt-get update
           sudo apt-get install -y libmbedtls-dev
           echo "✅ mbedtls 开发库安装完成"
 
       - name: Download kernel source
         if: steps.kernel-cache.outputs.cache-hit != 'true'
         run: |
-          echo "📥 下载内核源码 linux-6.18..."
+          echo "📥 下载内核源码..."
           wget -q https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.tar.xz
           tar -xf linux-6.18.tar.xz
-          echo "✅ 内核源码下载完成"
 
       - name: Configure kernel
         if: steps.kernel-cache.outputs.cache-hit != 'true'
         run: |
           cd linux-6.18
           echo "📝 配置内核..."
-          wget -q -O .config.original \
-            https://raw.githubusercontent.com/puppylinux-woof-CE/woof-CE/testing/kernel-kit/configs_x86_64/DOTconfig-6.18.1-x86_64 \
-            || true
-          if [ -f .config.original ]; then
-            cp .config.original .config
-          else
-            make defconfig
-          fi
-          echo "🔧 应用虚拟机优化..."
+          make defconfig
+          
           scripts/config --enable VIRTIO
           scripts/config --enable VIRTIO_PCI
           scripts/config --enable VIRTIO_BLK
           scripts/config --module VIRTIO_NET
           scripts/config --module VMXNET3
           scripts/config --module E1000
-          scripts/config --module PCNET32
-          scripts/config --module 8139CP
-          scripts/config --module 8139TOO
-          scripts/config --module E100
-          scripts/config --module NE2K_PCI
           scripts/config --module FAILOVER
           scripts/config --module NET_FAILOVER
           scripts/config --enable PACKET
@@ -167,96 +160,53 @@ jobs:
           scripts/config --enable IP_PNP
           scripts/config --enable IP_PNP_DHCP
           scripts/config --enable NETDEVICES
-          scripts/config --enable NET_CORE
-          scripts/config --enable NET_VENDOR_INTEL
-          scripts/config --enable NET_VENDOR_VIA
-          scripts/config --enable NET_VENDOR_REALTEK
-          scripts/config --disable SOUND
-          scripts/config --disable USB_SUPPORT
-          scripts/config --disable WLAN
-          scripts/config --enable POWER_SUPPLY
-          scripts/config --enable SUSPEND
-          scripts/config --enable HIBERNATION
           scripts/config --enable ACPI
-          scripts/config --enable ACPI_BUTTON
-          scripts/config --enable ACPI_POWER_METER
-          scripts/config --enable ACPI_PROC_EVENT
-          scripts/config --enable ACPI_SYSTEM_POWER_STATES_SUPPORT
+          
           make olddefconfig
-
-      - name: Force kernel config to use modules
-        if: steps.kernel-cache.outputs.cache-hit != 'true'
-        run: |
-          cd linux-6.18
-          echo "🔧 强制将相关选项设为模块..."
+          
+          # 确保模块配置正确
           sed -i 's/^CONFIG_FAILOVER=.*/CONFIG_FAILOVER=m/' .config
           sed -i 's/^CONFIG_NET_FAILOVER=.*/CONFIG_NET_FAILOVER=m/' .config
           sed -i 's/^CONFIG_VIRTIO_NET=.*/CONFIG_VIRTIO_NET=m/' .config
-          sed -i 's/^CONFIG_VMXNET3=.*/CONFIG_VMXNET3=m/' .config
           grep -q "^CONFIG_FAILOVER=" .config || echo "CONFIG_FAILOVER=m" >> .config
           grep -q "^CONFIG_NET_FAILOVER=" .config || echo "CONFIG_NET_FAILOVER=m" >> .config
           grep -q "^CONFIG_VIRTIO_NET=" .config || echo "CONFIG_VIRTIO_NET=m" >> .config
-          grep -q "^CONFIG_VMXNET3=" .config || echo "CONFIG_VMXNET3=m" >> .config
           make olddefconfig
-          echo "=== 验证关键选项 ==="
-          grep -E "CONFIG_(FAILOVER|NET_FAILOVER|VIRTIO_NET|VMXNET3)=" .config
 
       - name: Build kernel image
         run: |
           cd linux-6.18
-          if [ -f "arch/x86/boot/bzImage" ] && \
-             [ "${{ steps.kernel-cache.outputs.cache-hit }}" == "true" ]; then
-            echo "✅ 使用缓存的内核镜像，跳过编译"
+          if [ -f "arch/x86/boot/bzImage" ] && [ "${{ steps.kernel-cache.outputs.cache-hit }}" == "true" ]; then
+            echo "✅ 使用缓存的内核镜像"
           else
-            echo "🔨 编译内核镜像中..."
-            start_time=$(date +%s)
+            echo "🔨 编译内核..."
             make -j$(nproc) bzImage
-            end_time=$(date +%s)
-            duration=$((end_time - start_time))
-            echo "✅ 内核镜像编译完成，耗时: $((duration / 60)) 分钟"
           fi
-          echo "内核位置: $(pwd)/arch/x86/boot/bzImage"
           ls -lh arch/x86/boot/bzImage
 
       - name: Build kernel modules
         run: |
           cd linux-6.18
           if [ -f "modules.tar.gz" ]; then
-            echo "✅ 模块包已存在，跳过编译"
+            echo "✅ 模块包已存在"
           else
-            echo "🔨 编译内核模块中..."
-            start_time=$(date +%s)
+            echo "🔨 编译内核模块..."
             make modules_prepare
             make -j$(nproc) modules
-            if [ ! -f "modules.builtin" ]; then
-              echo "🔧 生成 modules.builtin..."
-              make modules.builtin
-            fi
             mkdir -p ../modules-install
             make modules_install INSTALL_MOD_PATH=../modules-install
-            KVER=$(ls ../modules-install/lib/modules/ | head -1)
-            if [ -n "$KVER" ] && [ ! -f "../modules-install/lib/modules/$KVER/modules.builtin" ]; then
-              cp modules.builtin ../modules-install/lib/modules/$KVER/ 2>/dev/null || true
-            fi
             cd ../modules-install
             tar -czf ../linux-6.18/modules.tar.gz lib
             cd ../linux-6.18
             rm -rf ../modules-install
-            end_time=$(date +%s)
-            duration=$((end_time - start_time))
-            echo "✅ 内核模块编译打包完成，耗时: $((duration / 60)) 分钟"
-          fi
-          if [ -f "modules.tar.gz" ]; then
-            echo "模块包大小: $(du -h modules.tar.gz | cut -f1)"
           fi
 
       - name: Download BusyBox
         if: steps.busybox-cache.outputs.cache-hit != 'true'
         run: |
-          echo "📥 下载 BusyBox 1.36.1..."
+          echo "📥 下载 BusyBox..."
           wget -q https://busybox.net/downloads/busybox-1.36.1.tar.bz2
           tar -xf busybox-1.36.1.tar.bz2
-          echo "✅ BusyBox 下载完成"
 
       - name: Configure BusyBox
         if: steps.busybox-cache.outputs.cache-hit != 'true'
@@ -270,79 +220,42 @@ jobs:
           sed -i 's/# CONFIG_ASH is not set/CONFIG_ASH=y/' .config
           sed -i 's/# CONFIG_ASH_MATH_SUPPORT is not set/CONFIG_ASH_MATH_SUPPORT=y/' .config
           sed -i 's/# CONFIG_ASH_MATH_SUPPORT_64 is not set/CONFIG_ASH_MATH_SUPPORT_64=y/' .config
-          sed -i 's/# CONFIG_FEATURE_PS_LONG is not set/CONFIG_FEATURE_PS_LONG=y/' .config
-          sed -i 's/# CONFIG_FEATURE_TOP_CPU_USAGE_PERCENTAGE is not set/CONFIG_FEATURE_TOP_CPU_USAGE_PERCENTAGE=y/' .config
-          sed -i 's/# CONFIG_FEATURE_SHUTDOWN_LOGIN is not set/CONFIG_FEATURE_SHUTDOWN_LOGIN=y/' .config
           
           # 网络工具
           sed -i 's/# CONFIG_UDHCPC is not set/CONFIG_UDHCPC=y/' .config
           sed -i 's/# CONFIG_IFCONFIG is not set/CONFIG_IFCONFIG=y/' .config
-          sed -i 's/# CONFIG_ROUTE is not set/CONFIG_ROUTE=y/' .config
           sed -i 's/# CONFIG_IP is not set/CONFIG_IP=y/' .config
           sed -i 's/# CONFIG_IPADDR is not set/CONFIG_IPADDR=y/' .config
           sed -i 's/# CONFIG_IPLINK is not set/CONFIG_IPLINK=y/' .config
           sed -i 's/# CONFIG_IPROUTE is not set/CONFIG_IPROUTE=y/' .config
           
-          # 启用 curl
-          echo "🌐 启用 BusyBox curl 和相关依赖..."
-          sed -i 's/# CONFIG_CURL is not set/CONFIG_CURL=y/' .config
-          sed -i 's/# CONFIG_FEATURE_CURL_PROXY is not set/CONFIG_FEATURE_CURL_PROXY=y/' .config
-          sed -i 's/# CONFIG_FEATURE_CURL_SSL is not set/CONFIG_FEATURE_CURL_SSL=y/' .config
-          
           # 启用 wget
           sed -i 's/# CONFIG_WGET is not set/CONFIG_WGET=y/' .config
           sed -i 's/# CONFIG_FEATURE_WGET_STATUSBAR is not set/CONFIG_FEATURE_WGET_STATUSBAR=y/' .config
-          sed -i 's/# CONFIG_FEATURE_WGET_AUTHENTICATION is not set/CONFIG_FEATURE_WGET_AUTHENTICATION=y/' .config
-          sed -i 's/# CONFIG_FEATURE_WGET_LONG_OPTIONS is not set/CONFIG_FEATURE_WGET_LONG_OPTIONS=y/' .config
-          sed -i 's/# CONFIG_FEATURE_WGET_TIMEOUT is not set/CONFIG_FEATURE_WGET_TIMEOUT=y/' .config
           
-          # 确保配置存在
+          # 尝试启用 curl
           grep -q "^CONFIG_CURL=" .config || echo "CONFIG_CURL=y" >> .config
-          grep -q "^CONFIG_FEATURE_CURL_PROXY=" .config || echo "CONFIG_FEATURE_CURL_PROXY=y" >> .config
-          grep -q "^CONFIG_FEATURE_CURL_SSL=" .config || echo "CONFIG_FEATURE_CURL_SSL=y" >> .config
           grep -q "^CONFIG_WGET=" .config || echo "CONFIG_WGET=y" >> .config
-          grep -q "^CONFIG_FEATURE_WGET_STATUSBAR=" .config || echo "CONFIG_FEATURE_WGET_STATUSBAR=y" >> .config
-          
-          echo "✅ BusyBox 配置完成"
-          echo "=== curl/wget 相关配置 ==="
-          grep -E "CONFIG_CURL|CONFIG_WGET" .config
           
           make olddefconfig
 
       - name: Build BusyBox
         run: |
           cd busybox-1.36.1
-          if [ -f "busybox" ] && \
-             [ "${{ steps.busybox-cache.outputs.cache-hit }}" == "true" ]; then
-            echo "✅ 使用缓存的 BusyBox，跳过编译"
+          if [ -f "busybox" ] && [ "${{ steps.busybox-cache.outputs.cache-hit }}" == "true" ]; then
+            echo "✅ 使用缓存的 BusyBox"
           else
-            echo "🔨 编译 BusyBox 中..."
+            echo "🔨 编译 BusyBox..."
             make -j$(nproc)
             make install
-            echo "✅ BusyBox 编译完成"
-          fi
-          ls -lh busybox
-          
-          echo "🔍 验证 BusyBox 中包含的 applet:"
-          echo "总 applet 数量: $(./busybox --list 2>/dev/null | wc -l)"
-          
-          echo ""
-          echo "=== 检查 curl/wget ==="
-          if ./busybox --list 2>/dev/null | grep -q "^curl$"; then
-            echo "✅ curl applet 已启用"
-          else
-            echo "⚠️ curl applet 未在 BusyBox 中启用，将使用独立编译的 curl"
           fi
           
-          if ./busybox --list 2>/dev/null | grep -q "^wget$"; then
-            echo "✅ wget applet 已启用"
-          else
-            echo "⚠️ wget applet 未在 BusyBox 中启用"
-          fi
+          echo "=== 检查 BusyBox applets ==="
+          ./busybox --list 2>/dev/null | grep -E "curl|wget" || echo "⚠️ curl/wget 未找到"
 
-      - name: Build static curl (standalone fallback)
+      - name: Build static curl (standalone)
         run: |
-          echo "🌐 编译独立静态 curl 作为备选..."
+          echo "🌐 编译独立静态 curl..."
           wget -q https://curl.se/download/curl-8.4.0.tar.gz
           tar -xf curl-8.4.0.tar.gz
           cd curl-8.4.0
@@ -354,7 +267,6 @@ jobs:
             --without-zlib \
             --disable-ipv6 \
             --disable-manual \
-            --disable-verbose \
             --prefix=/usr \
             CFLAGS="-Os -static" \
             LDFLAGS="-static"
@@ -362,222 +274,103 @@ jobs:
           mkdir -p ../curl-install/usr/bin
           cp src/curl ../curl-install/usr/bin/
           cd ..
-          chmod 755 curl-install/usr/bin/curl
-          echo "✅ 独立 curl 编译完成"
-          file curl-install/usr/bin/curl
+          echo "✅ curl 编译完成"
 
-      - name: Build MicroPython from source
+      - name: Build MicroPython
         run: |
-          echo "🐍 从源码编译 MicroPython x64..."
+          echo "🐍 编译 MicroPython..."
           mkdir -p python-root/usr/local/bin
-          mkdir -p python-root/home
           git clone --depth 1 --branch v1.24.1 https://github.com/micropython/micropython.git
           cd micropython
-          git submodule update --init --recursive
           make -C mpy-cross
           cd ports/unix
-          printf '%s\n' \
-            'MICROPY_PY_BTREE = 0' \
-            'MICROPY_PY_SSL = 1' \
-            'MICROPY_SSL_MBEDTLS = 1' \
-            'MICROPY_PY_CRYPTOLIB = 0' \
-            'MICROPY_PY_HASHLIB = 1' \
-            'MICROPY_PY_TERMIOS = 1' \
-            'MICROPY_PY_SOCKET = 1' \
-            'MICROPY_PY_FFI = 0' \
-            'MICROPY_PY_THREAD = 0' \
-            'MICROPY_USE_READLINE = 1' > mpconfigport.mk
-          if [ -f "variants/standard/mpconfigvariant.h" ]; then
-            sed -i '/MICROPY_PY_CRYPTOLIB/d' variants/standard/mpconfigvariant.h
-            echo "#undef MICROPY_PY_CRYPTOLIB" >> variants/standard/mpconfigvariant.h
-            echo "#define MICROPY_PY_CRYPTOLIB (0)" >> variants/standard/mpconfigvariant.h
-          fi
           make -j$(nproc) \
             CFLAGS_EXTRA="-static -I/usr/include/mbedtls" \
             LDFLAGS_EXTRA="-static" \
-            MICROPY_PY_CRYPTOLIB=0
-          if [ -f "micropython" ]; then
-            cp micropython ../../../python-root/usr/local/bin/
-          elif [ -f "build-standard/micropython" ]; then
-            cp build-standard/micropython ../../../python-root/usr/local/bin/
-          else
-            echo "❌ MicroPython 编译失败"
-            exit 1
-          fi
+            MICROPY_PY_SSL=1 \
+            MICROPY_SSL_MBEDTLS=1
+          cp micropython ../../../python-root/usr/local/bin/
           cd ../../..
           rm -rf micropython
-          
-          # 创建测试脚本
-          cat > python-root/home/test.py << 'EOF'
-          import sys
-          print("=" * 40)
-          print("MicroPython Test")
-          print("=" * 40)
-          print(f"Version: {sys.version}")
-          print(f"Platform: {sys.platform}")
-          print("=" * 40)
-          print("1 + 2 =", 1 + 2)
-          print("3 * 4 =", 3 * 4)
-          print("10 / 3 =", 10 / 3)
-          EOF
-          
           cd python-root/usr/local/bin
           ln -sf micropython python
           ln -sf micropython python3
           cd ../../../..
-          echo "✅ MicroPython 编译完成"
-          echo "MicroPython 大小: $(du -h python-root/usr/local/bin/micropython | cut -f1)"
+          echo "✅ MicroPython 完成"
 
       - name: Create rootfs
         run: |
-          echo "📦 创建 rootfs 目录..."
-          mkdir -p rootfs/{bin,sbin,usr/bin,usr/sbin,usr/local/bin,etc,proc,sys,dev,lib,lib64,tmp,var,run,root,home,usr/share/udhcpc,dev/shm}
+          echo "📦 创建 rootfs..."
+          mkdir -p rootfs/{bin,sbin,usr/bin,usr/local/bin,etc,proc,sys,dev,tmp,var,run,root,home,usr/share/udhcpc}
           
-          # 复制 BusyBox
           cp -a busybox-1.36.1/_install/* rootfs/
-          
-          # 复制 MicroPython
           cp -a python-root/* rootfs/
-          
-          # 复制独立 curl
           cp -a curl-install/usr/bin/curl rootfs/usr/bin/
           
-          # 创建符号链接
           ln -sf /bin/busybox rootfs/usr/bin/wget 2>/dev/null || true
-          
-          echo "✅ 文件复制完成"
-          
-          # 验证 curl
-          if [ -f "rootfs/usr/bin/curl" ]; then
-            echo "✅ curl 已复制到 rootfs"
-          fi
           
           # udhcpc 脚本
           cat > rootfs/usr/share/udhcpc/default.script << 'EOF'
           #!/bin/sh
-          INTERFACE="$1"
           case "$2" in
-          deconfig)
-              ip addr flush dev "$INTERFACE" 2>/dev/null
-              ip link set "$INTERFACE" down 2>/dev/null
-              ;;
           bound|renew)
-              ip addr add "$ip/$mask" dev "$INTERFACE" 2>/dev/null
-              ip link set "$INTERFACE" up 2>/dev/null
-              if [ -n "$router" ]; then
-                  ip route del default 2>/dev/null
-                  for r in $router; do
-                      ip route add default via "$r" dev "$INTERFACE" 2>/dev/null
-                      break
-                  done
-              fi
-              if [ -n "$dns" ]; then
-                  echo "# Generated by udhcpc" > /etc/resolv.conf.tmp
-                  for ns in $dns; do
-                      echo "nameserver $ns" >> /etc/resolv.conf.tmp
-                  done
-                  mv /etc/resolv.conf.tmp /etc/resolv.conf
-              fi
+              ip addr add "$ip/$mask" dev "$1" 2>/dev/null
+              ip link set "$1" up
+              [ -n "$router" ] && ip route add default via "$router" dev "$1" 2>/dev/null
+              [ -n "$dns" ] && echo "nameserver $dns" > /etc/resolv.conf
+              ;;
+          deconfig)
+              ip addr flush dev "$1" 2>/dev/null
+              ip link set "$1" down
               ;;
           esac
-          exit 0
           EOF
           chmod +x rootfs/usr/share/udhcpc/default.script
           
           # 解压内核模块
-          if [ -f linux-6.18/modules.tar.gz ]; then
-            echo "📦 解压内核模块..."
-            tar -xzf linux-6.18/modules.tar.gz -C rootfs/
-          fi
+          [ -f linux-6.18/modules.tar.gz ] && tar -xzf linux-6.18/modules.tar.gz -C rootfs/
           
-          # 创建设备节点
+          # 设备节点
           sudo mknod -m 666 rootfs/dev/null c 1 3 2>/dev/null || true
           sudo mknod -m 644 rootfs/dev/console c 5 1 2>/dev/null || true
-          sudo mknod -m 660 rootfs/dev/tty1 c 4 1 2>/dev/null || true
-          
-          # 创建基本命令
-          cat > rootfs/usr/local/bin/about << 'EOF'
-          #!/bin/sh
-          echo "====================="
-          echo "GudaoUI Linux V1"
-          echo "====================="
-          echo "Kernel: $(uname -r)"
-          echo "Arch: $(uname -m)"
-          echo ""
-          echo "Commands: python, curl, wget"
-          if command -v curl >/dev/null 2>&1; then
-              echo "curl: $(curl --version 2>&1 | head -n1)"
-          fi
-          EOF
-          chmod +x rootfs/usr/local/bin/about
-          
-          cat > rootfs/usr/local/bin/reboot << 'EOF'
-          #!/bin/sh
-          sync
-          /bin/busybox reboot -f
-          EOF
-          chmod +x rootfs/usr/local/bin/reboot
-          
-          cat > rootfs/usr/local/bin/poweroff << 'EOF'
-          #!/bin/sh
-          sync
-          /bin/busybox poweroff -f
-          EOF
-          chmod +x rootfs/usr/local/bin/poweroff
-          
-          # 创建符号链接
-          cd rootfs/usr/bin
-          ln -sf ../local/bin/about about 2>/dev/null || true
-          ln -sf ../local/bin/reboot reboot 2>/dev/null || true
-          ln -sf ../local/bin/poweroff poweroff 2>/dev/null || true
-          ln -sf poweroff halt 2>/dev/null || true
-          cd ../../../..
           
           # init 脚本
           cat > rootfs/init << 'EOF'
           #!/bin/sh
           export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin
-          export TERM=linux
           
-          echo "Mounting filesystems..."
-          /bin/busybox mount -t proc none /proc
-          /bin/busybox mount -t sysfs none /sys
-          /bin/busybox mount -t devtmpfs none /dev
-          /bin/busybox mount -t tmpfs tmpfs /tmp
-          /bin/busybox mkdir -p /dev/shm
-          /bin/busybox mount -t tmpfs tmpfs /dev/shm
+          mount -t proc none /proc
+          mount -t sysfs none /sys
+          mount -t devtmpfs none /dev
+          mount -t tmpfs tmpfs /tmp
+          mkdir -p /dev/shm
+          mount -t tmpfs tmpfs /dev/shm
           
-          /bin/busybox echo "gudao-ui" > /proc/sys/kernel/hostname 2>/dev/null || true
+          echo "gudao-ui" > /proc/sys/kernel/hostname 2>/dev/null
           /bin/busybox --install -s
           
-          sleep 1
-          
-          echo "=== Network Configuration ==="
-          for iface in $(ip link show 2>/dev/null | grep -E "^[0-9]+: (eth|ens|enp)" | cut -d: -f2 | tr -d " "); do
+          # 网络配置
+          for iface in $(ip link show | grep -E "^[0-9]+: (eth|ens|enp)" | cut -d: -f2 | tr -d " "); do
               ip link set "$iface" up
               if udhcpc -i "$iface" -s /usr/share/udhcpc/default.script -n -t 5; then
-                  echo "DHCP succeeded on $iface"
                   break
               fi
           done
           
-          if ! ip addr show 2>/dev/null | grep -q "inet "; then
+          # 静态 IP 备用
+          if ! ip addr show | grep -q "inet "; then
               ip addr add 10.0.2.15/24 dev eth0 2>/dev/null
               ip link set eth0 up
               ip route add default via 10.0.2.2 2>/dev/null
               echo "nameserver 8.8.8.8" > /etc/resolv.conf
-              echo "Static IP configured"
           fi
           
           clear
           echo "========================================"
           echo "     GudaoUI Linux V1"
           echo "========================================"
-          echo ""
-          echo "Commands: about, python, curl, wget, reboot, poweroff"
-          echo ""
-          echo "System: Linux $(uname -r) $(uname -m)"
-          echo "Memory: $(grep MemTotal /proc/meminfo | awk '{print int($2/1024)}')MB"
+          echo "Commands: python, curl, wget, reboot, poweroff"
+          echo "System: Linux $(uname -r)"
           
           if command -v python >/dev/null 2>&1; then
               echo "$(python --version 2>&1)"
@@ -586,54 +379,30 @@ jobs:
               echo "$(curl --version 2>&1 | head -n1)"
           fi
           
-          IP=$(ip addr show 2>/dev/null | grep "inet " | head -1 | awk '{print $2}' | cut -d/ -f1)
+          IP=$(ip addr show | grep "inet " | head -1 | awk '{print $2}' | cut -d/ -f1)
           [ -n "$IP" ] && echo "IP: $IP"
-          
-          echo ""
           echo "========================================"
-          echo ""
+          
           exec /bin/sh
           EOF
           chmod +x rootfs/init
           
-          # 系统配置文件
           echo "root:x:0:0:root:/root:/bin/sh" > rootfs/etc/passwd
           echo "root:x:0:" > rootfs/etc/group
           echo "nameserver 8.8.8.8" > rootfs/etc/resolv.conf
-          echo "nameserver 114.114.114.114" >> rootfs/etc/resolv.conf
-          echo "127.0.0.1 localhost gudao-ui" > rootfs/etc/hosts
+          echo "127.0.0.1 localhost" > rootfs/etc/hosts
           
-          cat > rootfs/etc/fstab << 'EOF'
-          proc    /proc    proc    defaults    0 0
-          sysfs   /sys     sysfs   defaults    0 0
-          devtmpfs /dev    devtmpfs defaults  0 0
-          tmpfs   /tmp     tmpfs   defaults    0 0
-          tmpfs   /run     tmpfs   defaults    0 0
-          tmpfs   /dev/shm tmpfs   defaults    0 0
-          EOF
-          
-          cat > rootfs/etc/profile << 'EOF'
-          export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin
-          export TERM=linux
-          export PS1='\u@\h:\w\$ '
-          alias ll='ls -la'
-          alias python='micropython'
-          EOF
-          
-          echo "✅ rootfs 准备完成，大小: $(du -sh rootfs | cut -f1)"
+          echo "✅ rootfs 完成: $(du -sh rootfs | cut -f1)"
 
-      - name: Create squashfs from rootfs
+      - name: Create squashfs
         run: |
-          echo "🗜️ 创建 squashfs 镜像..."
           mksquashfs rootfs rootfs.squashfs -comp xz -b 1M
-          echo "✅ squashfs 创建完成: $(du -h rootfs.squashfs | cut -f1)"
+          echo "✅ squashfs: $(du -h rootfs.squashfs | cut -f1)"
 
-      - name: Build initramfs for overlay boot
+      - name: Build initramfs
         run: |
-          echo "🛠️ 构建 initramfs..."
-          mkdir -p initramfs/{bin,dev,etc,proc,root,sys,mnt/iso,mnt/root,mnt/overlay,newroot}
+          mkdir -p initramfs/{bin,dev,proc,sys,mnt/iso,mnt/root,mnt/overlay,newroot}
           cp -a busybox-1.36.1/_install/* initramfs/
-          
           sudo mknod -m 600 initramfs/dev/console c 5 1 2>/dev/null || true
           sudo mknod -m 666 initramfs/dev/null c 1 3 2>/dev/null || true
           
@@ -643,47 +412,17 @@ jobs:
           mount -t sysfs none /sys
           mount -t devtmpfs none /dev
           
-          sleep 1
-          echo "GudaoUI Linux - Booting from squashfs with overlay..."
-          
           mkdir -p /mnt/iso
-          ISO_MOUNTED=0
-          for dev in /dev/sr* /dev/sd* /dev/hd*; do
-              [ -e "$dev" ] || continue
-              if mount -t iso9660 "$dev" /mnt/iso 2>/dev/null; then
-                  ISO_MOUNTED=1
-                  break
-              fi
+          for dev in /dev/sr* /dev/sd*; do
+              [ -e "$dev" ] && mount -t iso9660 "$dev" /mnt/iso 2>/dev/null && break
           done
           
-          if [ $ISO_MOUNTED -eq 0 ]; then
-              echo "ERROR: Could not mount ISO!"
-              exec sh
-          fi
-          
-          if [ ! -f /mnt/iso/boot/rootfs.squashfs ]; then
-              echo "ERROR: rootfs.squashfs not found!"
-              exec sh
-          fi
-          
-          mount -t squashfs -o ro,loop /mnt/iso/boot/rootfs.squashfs /mnt/root || {
-              echo "ERROR: Failed to mount squashfs"
-              exec sh
-          }
+          mount -t squashfs -o ro,loop /mnt/iso/boot/rootfs.squashfs /mnt/root || exec sh
           
           mkdir -p /mnt/overlay
           mount -t tmpfs tmpfs /mnt/overlay
           mkdir -p /mnt/overlay/upper /mnt/overlay/work
-          
-          mount -t overlay overlay -o lowerdir=/mnt/root,upperdir=/mnt/overlay/upper,workdir=/mnt/overlay/work /newroot || {
-              echo "ERROR: Failed to mount overlay"
-              exec sh
-          }
-          
-          if [ ! -x /newroot/init ]; then
-              echo "ERROR: /newroot/init not found!"
-              exec sh
-          fi
+          mount -t overlay overlay -o lowerdir=/mnt/root,upperdir=/mnt/overlay/upper,workdir=/mnt/overlay/work /newroot || exec sh
           
           umount /proc /sys /dev 2>/dev/null
           exec switch_root /newroot /init
@@ -693,11 +432,9 @@ jobs:
           cd initramfs
           find . | cpio -o -H newc | gzip > ../initramfs.cpio.gz
           cd ..
-          echo "✅ initramfs 创建完成: $(du -h initramfs.cpio.gz | cut -f1)"
 
-      - name: Create bootable ISO
+      - name: Create ISO
         run: |
-          echo "💿 创建启动 ISO..."
           mkdir -p iso/boot/grub
           cp linux-6.18/arch/x86/boot/bzImage iso/boot/vmlinuz
           cp initramfs.cpio.gz iso/boot/
@@ -706,22 +443,17 @@ jobs:
           cat > iso/boot/grub/grub.cfg << 'EOF'
           set default=0
           set timeout=3
-          menuentry "GudaoUI Linux V1" {
+          menuentry "GudaoUI Linux" {
             linux /boot/vmlinuz quiet
-            initrd /boot/initramfs.cpio.gz
-          }
-          menuentry "GudaoUI Linux V1 (Debug)" {
-            linux /boot/vmlinuz loglevel=7
             initrd /boot/initramfs.cpio.gz
           }
           EOF
           
           grub-mkrescue -o "$ISO_NAME" iso/
-          echo "✅ ISO 创建完成: $ISO_NAME"
-          echo "ISO 大小: $(du -h $ISO_NAME | cut -f1)"
+          echo "✅ ISO: $(du -h $ISO_NAME | cut -f1)"
           echo "iso_path=$ISO_NAME" >> $GITHUB_OUTPUT
 
-      - name: Upload ISO to Artifacts
+      - name: Upload ISO
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.set-release-info.outputs.iso_name }}
@@ -734,31 +466,16 @@ jobs:
           name: ${{ steps.set-release-info.outputs.release_title }}
           tag_name: ${{ steps.set-release-info.outputs.release_tag }}
           body: |
-            ## 🎉 GudaoUI Linux V1 (SquashFS + Overlay)
+            ## GudaoUI Linux
             
-            ### 📦 包含组件
-            - Linux 内核 6.18 (虚拟机优化版)
-            - BusyBox 1.36.1 (静态编译)
-            - curl 8.4.0 (独立静态编译)
-            - MicroPython v1.24.1
+            ### 包含组件
+            - Linux 6.18
+            - BusyBox 1.36.1
+            - curl 8.4.0
+            - MicroPython 1.24.1
             
-            ### 💻 可用命令
-            - about - 系统信息
-            - python - MicroPython 解释器
-            - curl - HTTP 客户端
-            - wget - HTTP 下载器
-            - reboot - 重启系统
-            - poweroff - 关机
-            
-            ### 🌐 网络配置
-            - 支持 DHCP 自动获取 IP
-            - 静态 IP 备用: 10.0.2.15/24
-            
-            ### 📊 构建信息
-            - 构建时间: $(date '+%Y-%m-%d %H:%M:%S')
-            - ISO 大小: $(du -h ${{ steps.set-release-info.outputs.iso_name }} | cut -f1)
+            ### 构建时间
+            $(date '+%Y-%m-%d %H:%M:%S')
           files: ${{ steps.set-release-info.outputs.iso_name }}
-          draft: false
-          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
