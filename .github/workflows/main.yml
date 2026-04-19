@@ -284,11 +284,22 @@ jobs:
           cd micropython
           make -C mpy-cross
           cd ports/unix
+          
+          # 关键：禁用 btree 模块，避免 Berkeley DB 依赖
           make -j$(nproc) \
             CFLAGS_EXTRA="-static -I/usr/include/mbedtls" \
             LDFLAGS_EXTRA="-static" \
+            MICROPY_PY_BTREE=0 \
             MICROPY_PY_SSL=1 \
-            MICROPY_SSL_MBEDTLS=1
+            MICROPY_SSL_MBEDTLS=1 \
+            MICROPY_PY_CRYPTOLIB=0 \
+            MICROPY_PY_HASHLIB=1 \
+            MICROPY_PY_TERMIOS=1 \
+            MICROPY_PY_SOCKET=1 \
+            MICROPY_PY_FFI=0 \
+            MICROPY_PY_THREAD=0 \
+            MICROPY_USE_READLINE=1
+          
           cp micropython ../../../python-root/usr/local/bin/
           cd ../../..
           rm -rf micropython
