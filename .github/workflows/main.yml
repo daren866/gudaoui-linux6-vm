@@ -123,7 +123,8 @@ jobs:
             autoconf \
             automake \
             libtool \
-            binutils
+            binutils \
+            libmbedtls-dev
 
       - name: Download kernel source
         if: steps.kernel-cache.outputs.cache-hit != 'true'
@@ -137,8 +138,10 @@ jobs:
         run: |
           cd linux-6.18
           echo "📝 配置内核..."
+          # 确保生成初始 .config
           make defconfig
           
+          # 使用 scripts/config 调整配置
           scripts/config --enable VIRTIO
           scripts/config --enable VIRTIO_PCI
           scripts/config --enable VIRTIO_BLK
@@ -156,15 +159,18 @@ jobs:
           scripts/config --enable ACPI
           scripts/config --enable DEVTMPFS
           
+          # 更新配置
           make olddefconfig
           
-          # 强制模块配置
+          # 强制模块配置（确保 failover 相关为模块）
           sed -i 's/^CONFIG_FAILOVER=.*/CONFIG_FAILOVER=m/' .config
           sed -i 's/^CONFIG_NET_FAILOVER=.*/CONFIG_NET_FAILOVER=m/' .config
           sed -i 's/^CONFIG_VIRTIO_NET=.*/CONFIG_VIRTIO_NET=m/' .config
           grep -q "^CONFIG_FAILOVER=" .config || echo "CONFIG_FAILOVER=m" >> .config
           grep -q "^CONFIG_NET_FAILOVER=" .config || echo "CONFIG_NET_FAILOVER=m" >> .config
           grep -q "^CONFIG_VIRTIO_NET=" .config || echo "CONFIG_VIRTIO_NET=m" >> .config
+          
+          # 再次更新配置
           make olddefconfig
 
       - name: Build kernel image
@@ -328,16 +334,15 @@ jobs:
           # 解压内核模块
           [ -f linux-6.18/modules.tar.gz ] && tar -xzf linux-6.18/modules.tar.gz -C rootfs/
           
-          # 设备节点（init 前创建基础节点）
+          # 设备节点
           sudo mknod -m 666 rootfs/dev/null c 1 3 2>/dev/null || true
           sudo mknod -m 644 rootfs/dev/console c 5 1 2>/dev/null || true
           
-          # init 脚本（修复块设备问题）
+          # init 脚本
           cat > rootfs/init << 'EOF'
           #!/bin/sh
           export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin
           
-          # 挂载基础文件系统
           mount -t proc none /proc
           mount -t sysfs none /sys
           mount -t devtmpfs none /dev
@@ -352,7 +357,7 @@ jobs:
           # 加载内核模块（若有）
           find /lib/modules -name "*.ko" -exec modprobe {} \; 2>/dev/null || true
           
-          # 网络配置（后台运行，避免阻塞）
+          # 网络配置（后台运行）
           (
             sleep 2
             for iface in $(ip link show | grep -E "^[0-9]+: (eth|ens|enp)" | cut -d: -f2 | tr -d " "); do
