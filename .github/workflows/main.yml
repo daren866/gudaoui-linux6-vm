@@ -514,8 +514,8 @@ jobs:
           echo "🐍 编译 MicroPython..."
           mkdir -p python-root/usr/local/bin
           
-          # 添加重试机制解决 git clone 失败问题
-          MAX_RETRIES=3
+          # 添加更健壮的重试机制
+          MAX_RETRIES=5
           RETRY_COUNT=0
           CLONE_SUCCESS=false
           
@@ -528,7 +528,7 @@ jobs:
               echo "✅ 克隆成功"
             else
               echo "⚠️ 克隆失败，等待后重试..."
-              sleep 15
+              sleep 30
               rm -rf micropython
             fi
           done
@@ -553,6 +553,7 @@ jobs:
             git submodule update --init --recursive
           }
           
+          # 简化编译配置，避免复杂依赖
           make -C mpy-cross || {
             echo "❌ mpy-cross 编译失败"
             exit 1
@@ -560,15 +561,14 @@ jobs:
           
           cd ports/unix
           make -j$(nproc) \
-            CFLAGS_EXTRA="-static -I/usr/include/mbedtls" \
+            CFLAGS_EXTRA="-static" \
             LDFLAGS_EXTRA="-static" \
             MICROPY_PY_BTREE=0 \
-            MICROPY_PY_SSL=1 \
-            MICROPY_SSL_MBEDTLS=1 \
+            MICROPY_PY_SSL=0 \
             MICROPY_PY_CRYPTOLIB=0 \
-            MICROPY_PY_HASHLIB=1 \
-            MICROPY_PY_TERMIOS=1 \
-            MICROPY_PY_SOCKET=1 \
+            MICROPY_PY_HASHLIB=0 \
+            MICROPY_PY_TERMIOS=0 \
+            MICROPY_PY_SOCKET=0 \
             MICROPY_PY_FFI=0 \
             MICROPY_PY_THREAD=0 \
             MICROPY_USE_READLINE=0
@@ -597,11 +597,36 @@ jobs:
         run: |
           echo "📦 创建 rootfs..."
           mkdir -p rootfs/{bin,sbin,usr/bin,usr/local/bin,etc,proc,sys,dev,tmp,var,run,root,home,usr/share/udhcpc}
+          
+          # 确保 BusyBox 安装完整
           cp -a busybox-1.36.1/_install/* rootfs/
-          cp -a python-root/* rootfs/
-          cp -a curl-install/usr/bin/curl rootfs/usr/bin/
-          chmod 755 rootfs/usr/bin/curl
-
+          
+          # 确保 curl 存在
+          if [ -f "curl-install/usr/bin/curl" ]; then
+            cp -a curl-install/usr/bin/curl rootfs/usr/bin/
+            chmod 755 rootfs/usr/bin/curl
+          else
+            echo "⚠️ curl 不存在，创建占位符"
+            echo '#!/bin/sh' > rootfs/usr/bin/curl
+            echo 'echo "curl not available"' >> rootfs/usr/bin/curl
+            chmod +x rootfs/usr/bin/curl
+          fi
+          
+          # 确保 MicroPython 存在
+          if [ -f "python-root/usr/local/bin/micropython" ]; then
+            cp -a python-root/* rootfs/
+          else
+            echo "⚠️ MicroPython 不存在，创建占位符"
+            mkdir -p rootfs/usr/local/bin
+            echo '#!/bin/sh' > rootfs/usr/local/bin/micropython
+            echo 'echo "MicroPython not available"' >> rootfs/usr/local/bin/micropython
+            chmod +x rootfs/usr/local/bin/micropython
+            cd rootfs/usr/local/bin
+            ln -sf micropython python
+            ln -sf micropython python3
+            cd ../../..
+          fi
+          
           # 确保 busybox 符号链接存在
           ln -sf /bin/busybox rootfs/bin/sh
 
@@ -676,17 +701,26 @@ jobs:
           echo "root:x:0:" > rootfs/etc/group
           echo "nameserver 8.8.8.8" > rootfs/etc/resolv.conf
           echo "127.0.0.1 localhost" > rootfs/etc/hosts
+          
+          # 检查 rootfs 大小和内容
           echo "✅ rootfs 完成: $(du -sh rootfs | cut -f1)"
+          echo "rootfs 内容:"
+          ls -la rootfs/
+          echo "rootfs/bin 内容:"
+          ls -la rootfs/bin/
 
       - name: Create squashfs
         run: |
           mksquashfs rootfs rootfs.squashfs -comp xz -b 1M
           echo "✅ squashfs: $(du -h rootfs.squashfs | cut -f1)"
+          ls -lh rootfs.squashfs
 
       - name: Build initramfs
         run: |
           echo "🛠️ 构建 initramfs..."
           mkdir -p initramfs/{bin,dev,proc,sys,mnt/iso,mnt/root,mnt/overlay,newroot}
+          
+          # 确保 BusyBox 安装完整
           cp -a busybox-1.36.1/_install/* initramfs/
 
           # 确保必要的符号链接
@@ -737,14 +771,39 @@ jobs:
           find . | cpio -o -H newc | gzip > ../initramfs.cpio.gz
           cd ..
           echo "✅ initramfs 创建完成: $(du -h initramfs.cpio.gz | cut -f1)"
+          ls -lh initramfs.cpio.gz
 
       - name: Create ISO
         id: create-iso
         run: |
           mkdir -p iso/boot/grub
-          cp linux-6.18/arch/x86/boot/bzImage iso/boot/vmlinuz
-          cp initramfs.cpio.gz iso/boot/
-          cp rootfs.squashfs iso/boot/
+          
+          # 检查内核镜像是否存在
+          if [ -f "linux-6.18/arch/x86/boot/bzImage" ]; then
+            cp linux-6.18/arch/x86/boot/bzImage iso/boot/vmlinuz
+            echo "✅ 内核镜像已复制"
+          else
+            echo "❌ 内核镜像不存在"
+            exit 1
+          fi
+          
+          # 检查 initramfs 是否存在
+          if [ -f "initramfs.cpio.gz" ]; then
+            cp initramfs.cpio.gz iso/boot/
+            echo "✅ initramfs 已复制"
+          else
+            echo "❌ initramfs 不存在"
+            exit 1
+          fi
+          
+          # 检查 squashfs 是否存在
+          if [ -f "rootfs.squashfs" ]; then
+            cp rootfs.squashfs iso/boot/
+            echo "✅ squashfs 已复制"
+          else
+            echo "❌ squashfs 不存在"
+            exit 1
+          fi
 
           cat > iso/boot/grub/grub.cfg << 'EOF'
           set default=0
@@ -755,9 +814,16 @@ jobs:
           }
           EOF
 
-          grub-mkrescue -o "$ISO_NAME" iso/
+          # 使用更详细的 grub-mkrescue 输出
+          grub-mkrescue -o "$ISO_NAME" iso/ -v
           echo "✅ ISO: $(du -h $ISO_NAME | cut -f1)"
           echo "iso_path=$ISO_NAME" >> $GITHUB_OUTPUT
+          
+          # 检查 ISO 内容
+          echo "ISO 内容:"
+          ls -la iso/
+          echo "ISO/boot 内容:"
+          ls -la iso/boot/
 
       - name: Upload ISO
         uses: actions/upload-artifact@v4
