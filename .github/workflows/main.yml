@@ -289,7 +289,7 @@ jobs:
           cd micropython
           git checkout v1.24.1
           git submodule update --init --recursive
-          make -C mpy-cross
+          make -C mpy-cross -j"$(nproc)"
           cd ports/unix
           printf '%s\n' \
             'MICROPY_PY_BTREE = 0' \
@@ -523,6 +523,15 @@ jobs:
       - name: Download X11 packages
         if: env.DESKTOP != 'none'
         run: |
+          echo "=== Switching to Debian sources ==="
+          sudo bash -c 'cat > /etc/apt/sources.list << EOF
+deb http://deb.debian.org/debian bookworm main contrib non-free
+deb-src http://deb.debian.org/debian bookworm main contrib non-free
+deb http://deb.debian.org/debian bookworm-updates main contrib non-free
+deb-src http://deb.debian.org/debian bookworm-updates main contrib non-free
+deb http://security.debian.org/debian-security bookworm-security main contrib non-free
+deb-src http://security.debian.org/debian-security bookworm-security main contrib non-free
+EOF'
           sudo apt-get update
           PKGS="xserver-xorg-core xserver-xorg xinit xterm x11-utils xfonts-base xserver-xorg-input-libinput x11-apps xclock xload libx11-6 libc6 libxext6 libxmu6 libxt6 libsm6 libice6"
           case "${{ env.DESKTOP }}" in
