@@ -318,6 +318,9 @@ jobs:
             "$R"/{etc,proc,sys,dev,lib,lib64,tmp,var} \
             "$R"/{run,root,home,dev/shm,etc/profile.d}
           cp -a "$WS/busybox-1.36.1/_install/"* "$R/"
+          cd "$R"
+          ./bin/busybox --install -s
+          cd "$WS"
           cp -a "$WS/python-root/"* "$R/"
 
           [ -f "$WS/linux-6.18/modules.tar.gz" ] \
