@@ -158,6 +158,26 @@ jobs:
           scripts/config --disable KALLSYMS_ALL
           scripts/config --disable STACK_VALIDATION
           scripts/config --disable GDB_SCRIPTS
+          # Force disable gendwarfksyms build
+          cat >> .config << 'EOCONFIG'
+# Debug info disabled
+CONFIG_DEBUG_INFO=n
+CONFIG_DEBUG_INFO_NONE=n
+CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT=n
+CONFIG_DEBUG_INFO_DWARF4=n
+CONFIG_DEBUG_INFO_DWARF5=n
+CONFIG_DEBUG_INFO_REDUCED=n
+CONFIG_DEBUG_INFO_SPLIT=n
+CONFIG_DEBUG_INFO_COMPRESSED=n
+CONFIG_DEBUG_INFO_BTF=n
+CONFIG_DEBUG_INFO_BTF_MODULES=n
+CONFIG_DEBUG_KERNEL=n
+CONFIG_STACK_VALIDATION=n
+CONFIG_FRAME_POINTER=n
+CONFIG_KALLSYMS=n
+CONFIG_KALLSYMS_ALL=n
+CONFIG_GDB_SCRIPTS=n
+EOCONFIG
           make olddefconfig
 
       - name: Force modules
