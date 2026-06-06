@@ -529,9 +529,12 @@ jobs:
             fluxbox) PKGS="$PKGS fluxbox" ;;
             both)    PKGS="$PKGS icewm fluxbox" ;;
           esac
+          echo "=== Packages to download ==="
+          echo "$PKGS"
           mkdir -p /tmp/x11-debs
           apt-cache depends --recurse --no-recommends --no-suggests --no-conflicts --no-breaks --no-replaces --no-enhances \
             $PKGS 2>/dev/null | grep -vE "^<|^\s" | sort -u > /tmp/pkg-list.txt
+          echo "=== Package count: $(wc -l /tmp/pkg-list.txt) ==="
           cd /tmp/x11-debs
           DL=0; SK=0
           while IFS= read -r p; do
@@ -539,6 +542,9 @@ jobs:
             apt-get download "$p" 2>/dev/null && DL=$((DL+1)) || SK=$((SK+1))
           done < /tmp/pkg-list.txt
           echo "DL=$DL SK=$SK Debs=$(ls *.deb 2>/dev/null | wc -l)"
+          echo "=== Checking Xorg packages ==="
+          ls -la xserver-xorg*.deb 2>/dev/null || echo "No xserver-xorg packages found"
+          ls -la xinit*.deb 2>/dev/null || echo "No xinit packages found"
 
       - name: Install desktop into rootfs
         if: env.DESKTOP != 'none'
@@ -547,8 +553,10 @@ jobs:
           R="$WS/rootfs"
           DD="/tmp/x11-debs"
           EX=0
+          echo "=== Installing X11 packages ==="
           for f in "$DD"/*.deb; do
             [ -f "$f" ] || continue
+            echo "Extracting: $f"
             dpkg-deb -x "$f" "$R/" 2>/dev/null && EX=$((EX+1))
           done
           echo "Extracted $EX debs"
@@ -556,6 +564,9 @@ jobs:
           ls -la "$R/usr/lib/xorg/" 2>/dev/null || echo "Xorg directory not found"
           ls -la "$R/usr/bin/Xorg" 2>/dev/null || echo "Xorg binary not found"
           file "$R/usr/lib/xorg/Xorg" 2>/dev/null || echo "Xorg file info failed"
+          echo "=== Checking Xorg alternatives ==="
+          ls -la "$R/usr/bin/X*" 2>/dev/null || echo "No X binaries found"
+          ls -la "$R/usr/lib/xorg/"* 2>/dev/null || echo "No Xorg lib files found"
 
           printf '%s\n' '/lib/x86_64-linux-gnu' '/usr/lib/x86_64-linux-gnu' '/lib64' '/usr/lib64' > "$R/etc/ld.so.conf"
           chmod 644 "$R/etc/ld.so.conf"
