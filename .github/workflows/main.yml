@@ -318,15 +318,30 @@ jobs:
             "$R"/{etc,proc,sys,dev,lib,lib64,tmp,var} \
             "$R"/{run,root,home,dev/shm,etc/profile.d}
           cp -a "$WS/busybox-1.36.1/_install/"* "$R/"
+          cd "$WS/busybox-1.36.1/_install"
+          echo "=== BusyBox _install directory contents ==="
+          ls -la bin/ 2>/dev/null || ls -la
+          echo "=== Checking busybox binary ==="
+          file bin/busybox 2>/dev/null || file busybox
           cd "$R"
           if [ -x ./bin/busybox ]; then
+            echo "=== Installing BusyBox symlinks ==="
             ./bin/busybox --install -s
             echo "BusyBox symlinks installed in rootfs"
+            echo "=== Checking installed symlinks ==="
+            ls -la "$R/bin/" | head -30
+            echo "=== Verifying key commands ==="
+            for cmd in cut tr grep sed awk ip udhcpc; do
+              if [ -x "$R/bin/$cmd" ]; then
+                echo "OK: $cmd"
+              else
+                echo "MISSING: $cmd"
+              fi
+            done
           else
             echo "ERROR: busybox binary not found!"
             exit 1
           fi
-          ls -la "$R/bin/" | head -20
           cd "$WS"
           cp -a "$WS/python-root/"* "$R/"
 
