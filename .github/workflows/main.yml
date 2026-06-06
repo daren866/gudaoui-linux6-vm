@@ -524,12 +524,12 @@ jobs:
         if: env.DESKTOP != 'none'
         run: |
           sudo apt-get update
-          PKGS="xserver-xorg-core xserver-xorg xinit xterm x11-utils xfonts-base xserver-xorg-input-libinput"
+          PKGS="xserver-xorg-core xserver-xorg xinit xterm x11-utils xfonts-base xserver-xorg-input-libinput x11-apps xclock xload"
           case "${{ env.DESKTOP }}" in
             icewm)   PKGS="$PKGS icewm" ;;
             fluxbox) PKGS="$PKGS fluxbox" ;;
-            twm)     PKGS="$PKGS twm" ;;
-            both)    PKGS="$PKGS icewm fluxbox twm" ;;
+            twm)     PKGS="$PKGS twm xterm" ;;
+            both)    PKGS="$PKGS icewm fluxbox twm xterm" ;;
           esac
           echo "=== Packages to download ==="
           echo "$PKGS"
