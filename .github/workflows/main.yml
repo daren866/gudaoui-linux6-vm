@@ -413,9 +413,9 @@ jobs:
             > "$R/usr/share/udhcpc/default.script"
           chmod +x "$R/usr/share/udhcpc/default.script"
 
-          printf '%s\n' '#!/bin/sh' 'echo "=== GudaoUI Linux V1 ==="' 'echo "Kernel: $(uname -r)"' 'echo "Arch:   $(uname -m)"' 'echo "Cmds: about calc python desktop reboot poweroff"' > "$R/usr/local/bin/about"
+          printf '%s\n' '#!/bin/sh' 'echo "=== GudaoUI Linux V1 ==="' 'echo "Kernel: $(/bin/busybox uname -r)"' 'echo "Arch:   $(/bin/busybox uname -m)"' 'echo "Cmds: about calc python desktop reboot poweroff"' > "$R/usr/local/bin/about"
           chmod +x "$R/usr/local/bin/about"
-          printf '%s\n' '#!/bin/sh' '[ $# -eq 0 ] && echo "Usage: calc EXPR" && exit 1' 'awk "BEGIN {print $*}"' > "$R/usr/local/bin/calc"
+          printf '%s\n' '#!/bin/sh' '[ $# -eq 0 ] && echo "Usage: calc EXPR" && exit 1' '/bin/busybox awk "BEGIN {print $*}"' > "$R/usr/local/bin/calc"
           chmod +x "$R/usr/local/bin/calc"
           printf '%s\n' '#!/bin/sh' 'echo "Rebooting..."' 'sync' '/bin/busybox reboot -f' > "$R/usr/local/bin/reboot"
           chmod +x "$R/usr/local/bin/reboot"
@@ -563,15 +563,15 @@ jobs:
           printf '%s\n' '#!/bin/sh' 'export XDG_SESSION_TYPE=x11' 'export XDG_CURRENT_DESKTOP=GudaoUI' 'xterm -geometry 100x30+50+50 -bg black -fg green -title "GudaoUI" &' 'sleep 1' '[ -n "$WM_CMD" ] && exec $WM_CMD' > "$R/root/.xinitrc"
           chmod +x "$R/root/.xinitrc"
 
-          printf '%s\n' '#!/bin/sh' 'export HOME="${HOME:-/root}"' 'export DISPLAY="${DISPLAY:-:0}"' 'export XDG_SESSION_TYPE=x11' 'XAUTH="$HOME/.Xauthority"' 'touch "$XAUTH" && chmod 600 "$XAUTH"' 'CK=$(head -c 16 /dev/urandom | od -An -tx1 | tr -d " \\n")' '[ -n "$CK" ] && {' "  printf '\\x00' >> \"\$XAUTH\"" "  printf '%s' \"\$DISPLAY\" >> \"\$XAUTH\"" "  printf '\\x00' >> \"\$XAUTH\"" "  printf '%s' 'MIT-MAGIC-COOKIE-1' >> \"\$XAUTH\"" "  printf '\\x00' >> \"\$XAUTH\"" "  printf '%04d' 16 >> \"\$XAUTH\"" "  printf '%s' \"\$CK\" >> \"\$XAUTH\"" '}' 'killall Xorg 2>/dev/null' 'killall X 2>/dev/null' 'sleep 1' 'if [ -x /usr/bin/Xorg ]; then' '  /usr/bin/Xorg "$DISPLAY" &' 'elif [ -x /usr/bin/X ]; then' '  /usr/bin/X "$DISPLAY" &' 'else' '  echo "ERROR: No X server"; exit 1' 'fi' 'T=0' 'while [ $T -lt 10 ]; do' '  pgrep Xorg >/dev/null 2>&1 && break' '  sleep 1; T=$((T+1))' 'done' 'pgrep Xorg >/dev/null 2>&1 || { echo "ERROR: X failed"; exit 1; }' 'echo "X started on $DISPLAY"' '[ -x "$HOME/.xinitrc" ] && exec "$HOME/.xinitrc"' 'exec xterm' \
+          printf '%s\n' '#!/bin/sh' 'export HOME="${HOME:-/root}"' 'export DISPLAY="${DISPLAY:-:0}"' 'export XDG_SESSION_TYPE=x11' 'XAUTH="$HOME/.Xauthority"' 'touch "$XAUTH" && chmod 600 "$XAUTH"' 'CK=$(/bin/busybox head -c 16 /dev/urandom | /bin/busybox od -An -tx1 | /bin/busybox tr -d " \\n")' '[ -n "$CK" ] && {' "  printf '\\x00' >> \"\$XAUTH\"" "  printf '%s' \"\$DISPLAY\" >> \"\$XAUTH\"" "  printf '\\x00' >> \"\$XAUTH\"" "  printf '%s' 'MIT-MAGIC-COOKIE-1' >> \"\$XAUTH\"" "  printf '\\x00' >> \"\$XAUTH\"" "  printf '%04d' 16 >> \"\$XAUTH\"" "  printf '%s' \"\$CK\" >> \"\$XAUTH\"" '}' '/bin/busybox killall Xorg 2>/dev/null' '/bin/busybox killall X 2>/dev/null' 'sleep 1' 'if [ -x /usr/bin/Xorg ]; then' '  /usr/bin/Xorg "$DISPLAY" &' 'elif [ -x /usr/bin/X ]; then' '  /usr/bin/X "$DISPLAY" &' 'else' '  echo "ERROR: No X server"; exit 1' 'fi' 'T=0' 'while [ $T -lt 10 ]; do' '  /bin/busybox pgrep Xorg >/dev/null 2>&1 && break' '  sleep 1; T=$((T+1))' 'done' '/bin/busybox pgrep Xorg >/dev/null 2>&1 || { echo "ERROR: X failed"; exit 1; }' 'echo "X started on $DISPLAY"' '[ -x "$HOME/.xinitrc" ] && exec "$HOME/.xinitrc"' 'exec xterm' \
             > "$R/usr/bin/startx"
           chmod +x "$R/usr/bin/startx"
 
-          printf '%s\n' '#!/bin/sh' 'export HOME=/root DISPLAY=:0' 'export XDG_SESSION_TYPE=x11' 'export XDG_CURRENT_DESKTOP=GudaoUI' 'WM="${1:-fluxbox}"' 'case "$WM" in' '  icewm) echo "exec icewm --replace" > /root/.xinitrc ;;' '  *) echo "exec fluxbox" > /root/.xinitrc ;;' 'esac' 'chmod +x /root/.xinitrc' 'if [ -x /usr/bin/startx ]; then exec startx' 'elif [ -x /usr/bin/xinit ]; then exec xinit -- /usr/bin/Xorg :0' 'else echo "ERROR: no X init"; exit 1; fi' \
+          printf '%s\n' '#!/bin/sh' 'export HOME=/root DISPLAY=:0' 'export XDG_SESSION_TYPE=x11' 'export XDG_CURRENT_DESKTOP=GudaoUI' 'WM="${1:-fluxbox}"' 'case "$WM" in' '  icewm) echo "exec icewm --replace" > /root/.xinitrc ;;' '  *) echo "exec fluxbox" > /root/.xinitrc ;;' 'esac' '/bin/busybox chmod +x /root/.xinitrc' 'if [ -x /usr/bin/startx ]; then exec startx' 'elif [ -x /usr/bin/xinit ]; then exec xinit -- /usr/bin/Xorg :0' 'else echo "ERROR: no X init"; exit 1; fi' \
             > "$R/usr/local/bin/start-desktop"
           chmod +x "$R/usr/local/bin/start-desktop"
 
-          printf '%s\n' '#!/bin/sh' 'echo "GudaoUI Desktop"' 'command -v icewm >/dev/null 2>&1 && echo "  start-desktop icewm"' 'command -v fluxbox >/dev/null 2>&1 && echo "  start-desktop fluxbox"' 'if [ -f /etc/default-desktop ]; then W=$(cat /etc/default-desktop); echo "Default: $W"; start-desktop "$W"' 'else start-desktop fluxbox; fi' \
+          printf '%s\n' '#!/bin/sh' 'echo "GudaoUI Desktop"' '/bin/busybox command -v icewm >/dev/null 2>&1 && echo "  start-desktop icewm"' '/bin/busybox command -v fluxbox >/dev/null 2>&1 && echo "  start-desktop fluxbox"' 'if [ -f /etc/default-desktop ]; then W=$(/bin/busybox cat /etc/default-desktop); echo "Default: $W"; start-desktop "$W"' 'else start-desktop fluxbox; fi' \
             > "$R/usr/local/bin/desktop"
           chmod +x "$R/usr/local/bin/desktop"
 
