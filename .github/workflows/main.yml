@@ -528,7 +528,8 @@ jobs:
           case "${{ env.DESKTOP }}" in
             icewm)   PKGS="$PKGS icewm" ;;
             fluxbox) PKGS="$PKGS fluxbox" ;;
-            both)    PKGS="$PKGS icewm fluxbox" ;;
+            twm)     PKGS="$PKGS twm" ;;
+            both)    PKGS="$PKGS icewm fluxbox twm" ;;
           esac
           echo "=== Packages to download ==="
           echo "$PKGS"
@@ -546,26 +547,7 @@ jobs:
           echo "=== Checking X11 packages ==="
           ls -la xinit*.deb 2>/dev/null || echo "No xinit packages found"
           ls -la xserver-xorg*.deb 2>/dev/null || echo "No xserver-xorg packages found"
-
-      - name: Build TWM from source
-        if: env.DESKTOP == 'twm' || env.DESKTOP == 'both'
-        run: |
-          echo "=== Building TWM from source ==="
-          echo "Adding deb-src to sources.list..."
-          sudo bash -c 'echo "deb-src http://azure.archive.ubuntu.com/ubuntu/ noble main" >> /etc/apt/sources.list'
-          sudo bash -c 'echo "deb-src http://azure.archive.ubuntu.com/ubuntu/ noble-updates main" >> /etc/apt/sources.list'
-          sudo bash -c 'echo "deb-src http://azure.archive.ubuntu.com/ubuntu/ noble-security main" >> /etc/apt/sources.list'
-          sudo apt-get update
-          sudo apt-get install -y libx11-dev libxext-dev libxmu-dev libxt-dev libsm-dev autoconf automake libtool xutils-dev pkg-config
-          sudo apt-get build-dep -y twm
-          git clone https://gitlab.freedesktop.org/xorg/app/twm.git /tmp/twm
-          cd /tmp/twm
-          ./autogen.sh --prefix=/usr
-          make -j$(nproc)
-          mkdir -p /tmp/twm-install
-          make DESTDIR=/tmp/twm-install install
-          echo "=== TWM build complete ==="
-          ls -la /tmp/twm-install/usr/bin/twm 2>/dev/null || echo "TWM binary not found"
+          ls -la twm*.deb 2>/dev/null || echo "No twm packages found"
 
       - name: Install desktop into rootfs
         if: env.DESKTOP != 'none'
@@ -623,16 +605,6 @@ jobs:
           echo "=== Final Xorg setup ==="
           ls -la "$R/usr/lib/xorg/Xorg" 2>/dev/null || echo "Xorg symlink not created"
           ls -la "$R/usr/bin/Xorg" 2>/dev/null || echo "Xorg wrapper not found"
-          
-          echo "=== Installing compiled TWM ==="
-          if [ -d "/tmp/twm-install/usr" ]; then
-            echo "Copying compiled TWM to rootfs..."
-            cp -a /tmp/twm-install/usr/* "$R/usr/"
-            echo "TWM installed from source"
-            ls -la "$R/usr/bin/twm" 2>/dev/null || echo "TWM not copied"
-          else
-            echo "WARNING: Compiled TWM not found"
-          fi
 
           mkdir -p "$R/etc/X11/xinit" "$R/root"
           printf '%s\n' '#!/bin/sh' '[ -f "$HOME/.xinitrc" ] && exec "$HOME/.xinitrc"' 'exec xterm' > "$R/etc/X11/xinit/xinitrc"
