@@ -62,13 +62,13 @@ jobs:
         uses: actions/cache@v4
         id: kernel-cache
         with:
-          path: linux-6.18
+          path: linux-debian
           key: >-
-            kernel-6.18-${{
+            kernel-debian-${{
               hashFiles('6.18.x-x86_64-build.conf')
             }}
           restore-keys: |
-            kernel-6.18-
+            kernel-debian-
 
       - name: Cache busybox
         uses: actions/cache@v4
@@ -96,18 +96,24 @@ jobs:
       - name: Download kernel
         if: steps.kernel-cache.outputs.cache-hit != 'true'
         run: |
-          wget -q https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.tar.xz
-          tar -xf linux-6.18.tar.xz
+          echo "=== Adding deb-src to sources.list ==="
+          sudo bash -c 'echo "deb-src http://azure.archive.ubuntu.com/ubuntu/ noble main" >> /etc/apt/sources.list'
+          sudo bash -c 'echo "deb-src http://azure.archive.ubuntu.com/ubuntu/ noble-updates main" >> /etc/apt/sources.list'
+          sudo bash -c 'echo "deb-src http://azure.archive.ubuntu.com/ubuntu/ noble-security main" >> /etc/apt/sources.list'
+          sudo apt-get update
+          echo "=== Downloading Debian kernel source ==="
+          apt-get source linux-image-unsigned-$(uname -r)
+          KERNEL_DIR=$(ls -d linux-* | grep -v '.tar' | head -1)
+          echo "KERNEL_DIR=$KERNEL_DIR"
+          mv "$KERNEL_DIR" linux-debian
+          ls -la linux-debian
 
       - name: Configure kernel
         run: |
-          cd linux-6.18
-          wget -q -O .config.original \
-            https://raw.githubusercontent.com/puppylinux-woof-CE/woof-CE/testing/kernel-kit/configs_x86_64/DOTconfig-6.18.1-x86_64 \
-            || true
-          [ -f .config.original ] \
-            && cp .config.original .config \
-            || make defconfig
+          cd linux-debian
+          # 使用Debian默认配置
+          cp /boot/config-$(uname -r) .config || make defconfig
+          # 启用必要的选项
           for o in VIRTIO VIRTIO_PCI VIRTIO_BLK; do
             scripts/config --enable "$o"
           done
@@ -127,7 +133,7 @@ jobs:
 
       - name: Force modules
         run: |
-          cd linux-6.18
+          cd linux-debian
           for o in FAILOVER NET_FAILOVER \
             VIRTIO_NET VMXNET3; do
             sed -i "s/^CONFIG_${o}=.*/CONFIG_${o}=m/" .config
@@ -138,13 +144,14 @@ jobs:
 
       - name: Build kernel
         run: |
-          cd linux-6.18
+          cd linux-debian
           HIT="${{ steps.kernel-cache.outputs.cache-hit }}"
           if [ -f arch/x86/boot/bzImage ] \
             && [ "$HIT" = "true" ]; then
             echo "Using cached kernel"
           else
             S=$(date +%s)
+            echo "=== Building kernel with $(nproc) cores ==="
             make -j"$(nproc)" bzImage
             echo "Built in $(( ($(date +%s)-S)/60 )) min"
           fi
@@ -152,11 +159,12 @@ jobs:
 
       - name: Build modules
         run: |
-          cd linux-6.18
+          cd linux-debian
           if [ -f modules.tar.gz ]; then
             echo "Modules exist, skipping"
           else
             S=$(date +%s)
+            echo "=== Building modules with $(nproc) cores ==="
             make modules_prepare
             make -j"$(nproc)" modules
             make modules.builtin 2>/dev/null || true
@@ -169,8 +177,8 @@ jobs:
               "../modules-install/lib/modules/${KVER}/" \
               2>/dev/null || true
             cd ../modules-install
-            tar -czf ../linux-6.18/modules.tar.gz lib
-            cd ../linux-6.18
+            tar -czf ../linux-debian/modules.tar.gz lib
+            cd ../linux-debian
             rm -rf ../modules-install
             echo "Built in $(( ($(date +%s)-S)/60 )) min"
           fi
@@ -289,7 +297,7 @@ jobs:
           cd micropython
           git checkout v1.24.1
           git submodule update --init --recursive
-          make -C mpy-cross -j"$(nproc)"
+          make -C mpy-cross
           cd ports/unix
           printf '%s\n' \
             'MICROPY_PY_BTREE = 0' \
@@ -523,15 +531,6 @@ jobs:
       - name: Download X11 packages
         if: env.DESKTOP != 'none'
         run: |
-          echo "=== Switching to Debian sources ==="
-          sudo bash -c 'cat > /etc/apt/sources.list << EOF
-deb http://deb.debian.org/debian bookworm main contrib non-free
-deb-src http://deb.debian.org/debian bookworm main contrib non-free
-deb http://deb.debian.org/debian bookworm-updates main contrib non-free
-deb-src http://deb.debian.org/debian bookworm-updates main contrib non-free
-deb http://security.debian.org/debian-security bookworm-security main contrib non-free
-deb-src http://security.debian.org/debian-security bookworm-security main contrib non-free
-EOF'
           sudo apt-get update
           PKGS="xserver-xorg-core xserver-xorg xinit xterm x11-utils xfonts-base xserver-xorg-input-libinput x11-apps xclock xload libx11-6 libc6 libxext6 libxmu6 libxt6 libsm6 libice6"
           case "${{ env.DESKTOP }}" in
