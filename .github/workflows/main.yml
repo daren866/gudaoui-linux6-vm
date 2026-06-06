@@ -130,8 +130,16 @@ jobs:
           for o in SOUND USB_SUPPORT WLAN; do
             scripts/config --disable "$o"
           done
-          # 禁用gendwarfksyms（避免dwarf.h依赖问题）
+          # 禁用所有调试信息相关选项（避免dwarf.h依赖问题）
+          scripts/config --disable DEBUG_INFO
+          scripts/config --disable DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT
+          scripts/config --disable DEBUG_INFO_DWARF4
+          scripts/config --disable DEBUG_INFO_DWARF5
+          scripts/config --disable DEBUG_INFO_BTF
           scripts/config --disable DEBUG_INFO_BTF_MODULES
+          scripts/config --disable DEBUG_INFO_REDUCED
+          scripts/config --disable DEBUG_INFO_SPLIT
+          scripts/config --disable DEBUG_KERNEL
           make olddefconfig
 
       - name: Force modules
