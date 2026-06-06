@@ -598,15 +598,19 @@ jobs:
           [ -x "$R/usr/sbin/ldconfig" ] && sudo chroot "$R" /usr/sbin/ldconfig 2>/dev/null || true
           
           echo "=== Creating library symlinks from /usr/lib/x86_64-linux-gnu to /usr/lib ==="
-          cd "$R/usr/lib"
-          for lib in "$R/usr/lib/x86_64-linux-gnu/"*.so* 2>/dev/null; do
-            [ -f "$lib" ] || continue
-            libname=$(basename "$lib")
-            if [ ! -e "$libname" ] && [ ! -L "$libname" ]; then
-              ln -sf "x86_64-linux-gnu/$libname" "$libname"
-              echo "Created symlink: $libname -> x86_64-linux-gnu/$libname"
-            fi
-          done
+          if [ -d "$R/usr/lib/x86_64-linux-gnu" ]; then
+            cd "$R/usr/lib"
+            for lib in "$R/usr/lib/x86_64-linux-gnu/"*.so*; do
+              [ -f "$lib" ] || continue
+              libname=$(basename "$lib")
+              if [ ! -e "$libname" ] && [ ! -L "$libname" ]; then
+                ln -sf "x86_64-linux-gnu/$libname" "$libname"
+                echo "Created symlink: $libname -> x86_64-linux-gnu/$libname"
+              fi
+            done
+          else
+            echo "WARNING: /usr/lib/x86_64-linux-gnu not found"
+          fi
 
           mkdir -p "$R/usr/lib/xorg"
           if [ -n "$XORG_BIN" ]; then
