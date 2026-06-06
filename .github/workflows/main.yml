@@ -127,6 +127,17 @@ jobs:
             NETDEVICES NET_CORE ACPI ACPI_BUTTON; do
             scripts/config --enable "$o"
           done
+          # ISO9660 CD-ROM filesystem support
+          for o in ISO9660_FS JOLIET TRANS TYPES DEVFS_FS; do
+            scripts/config --enable "$o"
+          done
+          # CD-ROM and storage drivers
+          for o in ATA PATA_ACPI ATA_PIIX ATA_GENERIC ATAPI; do
+            scripts/config --enable "$o"
+          done
+          scripts/config --enable SCSI_CDROM
+          scripts/config --enable BLK_DEV_CDROM
+          scripts/config --enable CDROM_PKTCDVD
           for o in SOUND USB_SUPPORT WLAN; do
             scripts/config --disable "$o"
           done
