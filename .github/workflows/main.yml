@@ -551,7 +551,7 @@ jobs:
         if: env.DESKTOP == 'twm' || env.DESKTOP == 'both'
         run: |
           echo "=== Building TWM from source ==="
-          sudo apt-get install -y libx11-dev libxext-dev libxmu-dev libxt-dev libsm-dev autoconf automake libtool xorg-macros xutils-dev
+          sudo apt-get install -y libx11-dev libxext-dev libxmu-dev libxt-dev libsm-dev autoconf automake libtool xutils-dev pkg-config xorgproto
           git clone https://gitlab.freedesktop.org/xorg/app/twm.git /tmp/twm
           cd /tmp/twm
           ./autogen.sh --prefix=/usr
