@@ -523,7 +523,7 @@ jobs:
         if: env.DESKTOP != 'none'
         run: |
           sudo apt-get update
-          PKGS="xinit xterm x11-utils xfonts-base xserver-xorg-input-libinput"
+          PKGS="xserver-xorg-core xserver-xorg xinit xterm x11-utils xfonts-base xserver-xorg-input-libinput"
           case "${{ env.DESKTOP }}" in
             icewm)   PKGS="$PKGS icewm" ;;
             fluxbox) PKGS="$PKGS fluxbox" ;;
@@ -544,28 +544,7 @@ jobs:
           echo "DL=$DL SK=$SK Debs=$(ls *.deb 2>/dev/null | wc -l)"
           echo "=== Checking X11 packages ==="
           ls -la xinit*.deb 2>/dev/null || echo "No xinit packages found"
-
-      - name: Build Xorg Server from source
-        if: env.DESKTOP != 'none'
-        run: |
-          echo "=== Building Xorg Server from source ==="
-          sudo apt-get install -y build-essential autoconf automake libtool pkg-config git
-          echo "Adding deb-src to sources.list..."
-          sudo bash -c 'echo "deb-src http://azure.archive.ubuntu.com/ubuntu/ noble main" >> /etc/apt/sources.list'
-          sudo bash -c 'echo "deb-src http://azure.archive.ubuntu.com/ubuntu/ noble-updates main" >> /etc/apt/sources.list'
-          sudo bash -c 'echo "deb-src http://azure.archive.ubuntu.com/ubuntu/ noble-security main" >> /etc/apt/sources.list'
-          sudo apt-get update
-          sudo apt-get build-dep -y xserver-xorg-core
-          git clone https://gitlab.freedesktop.org/xorg/xserver.git /tmp/xserver
-          cd /tmp/xserver
-          git checkout xorg-server-21.1.11
-          ./autogen.sh --prefix=/usr --enable-dri3 --enable-config-udev
-          make -j$(nproc)
-          mkdir -p /tmp/xorg-install
-          make DESTDIR=/tmp/xorg-install install
-          echo "=== Xorg build complete ==="
-          ls -la /tmp/xorg-install/usr/bin/Xorg 2>/dev/null || echo "Xorg binary not found"
-          cp -a /tmp/xorg-install/usr/* /tmp/x11-debs-extracted/ 2>/dev/null || true
+          ls -la xserver-xorg*.deb 2>/dev/null || echo "No xserver-xorg packages found"
 
       - name: Install desktop into rootfs
         if: env.DESKTOP != 'none'
@@ -581,15 +560,6 @@ jobs:
             dpkg-deb -x "$f" "$R/" 2>/dev/null && EX=$((EX+1))
           done
           echo "Extracted $EX debs"
-
-          echo "=== Installing compiled Xorg Server ==="
-          if [ -d "/tmp/xorg-install/usr" ]; then
-            echo "Copying compiled Xorg to rootfs..."
-            cp -a /tmp/xorg-install/usr/* "$R/usr/"
-            echo "Xorg installed from source"
-          else
-            echo "WARNING: Compiled Xorg not found"
-          fi
 
           echo "=== Checking Xorg installation ==="
           ls -la "$R/usr/bin/Xorg" 2>/dev/null || echo "Xorg binary not found"
