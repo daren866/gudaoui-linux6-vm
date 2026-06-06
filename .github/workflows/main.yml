@@ -572,6 +572,32 @@ jobs:
           chmod 644 "$R/etc/ld.so.conf"
           [ -x "$R/usr/sbin/ldconfig" ] && sudo chroot "$R" /usr/sbin/ldconfig 2>/dev/null || true
 
+          echo "=== Searching for Xorg executable ==="
+          XORG_BIN=""
+          for path in "$R/usr/bin/Xorg" "$R/usr/bin/X" "$R/usr/lib/xorg/Xorg" "$R/usr/lib/x86_64-linux-gnu/xorg/Xorg"; do
+            if [ -x "$path" ]; then
+              echo "Found Xorg at: $path"
+              XORG_BIN="$path"
+              break
+            fi
+          done
+
+          if [ -z "$XORG_BIN" ]; then
+            echo "WARNING: Xorg not found, searching..."
+            find "$R/usr" -name "Xorg" -type f 2>/dev/null | head -5
+            find "$R/usr" -name "X" -type f -executable 2>/dev/null | head -5
+          fi
+
+          if [ -n "$XORG_BIN" ] && [ ! -e "$R/usr/bin/Xorg" ]; then
+            echo "Creating symlink: /usr/bin/Xorg -> $XORG_BIN"
+            ln -sf "$XORG_BIN" "$R/usr/bin/Xorg"
+          fi
+          if [ -n "$XORG_BIN" ] && [ ! -e "$R/usr/lib/xorg/Xorg" ]; then
+            echo "Creating symlink: /usr/lib/xorg/Xorg -> $XORG_BIN"
+            mkdir -p "$R/usr/lib/xorg"
+            ln -sf "$XORG_BIN" "$R/usr/lib/xorg/Xorg"
+          fi
+
           mkdir -p "$R/etc/X11/xinit" "$R/root"
           printf '%s\n' '#!/bin/sh' '[ -f "$HOME/.xinitrc" ] && exec "$HOME/.xinitrc"' 'exec xterm' > "$R/etc/X11/xinit/xinitrc"
           chmod +x "$R/etc/X11/xinit/xinitrc"
