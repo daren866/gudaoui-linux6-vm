@@ -91,7 +91,8 @@ jobs:
             build-essential libncurses-dev bison flex \
             libssl-dev libelf-dev bc wget cpio xorriso \
             grub-pc-bin grub-common mtools dosfstools \
-            git pkg-config squashfs-tools libmbedtls-dev
+            git pkg-config squashfs-tools libmbedtls-dev \
+            libdwarf-dev dwarves
 
       - name: Download kernel
         if: steps.kernel-cache.outputs.cache-hit != 'true'
