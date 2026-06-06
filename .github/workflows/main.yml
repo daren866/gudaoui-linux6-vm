@@ -523,7 +523,7 @@ jobs:
         if: env.DESKTOP != 'none'
         run: |
           sudo apt-get update
-          PKGS="xserver-xorg-core xserver-xorg xinit xterm x11-utils xfonts-base xserver-xorg-input-libinput"
+          PKGS="xinit xterm x11-utils xfonts-base xserver-xorg-input-libinput"
           case "${{ env.DESKTOP }}" in
             icewm)   PKGS="$PKGS icewm" ;;
             fluxbox) PKGS="$PKGS fluxbox" ;;
@@ -542,9 +542,25 @@ jobs:
             apt-get download "$p" 2>/dev/null && DL=$((DL+1)) || SK=$((SK+1))
           done < /tmp/pkg-list.txt
           echo "DL=$DL SK=$SK Debs=$(ls *.deb 2>/dev/null | wc -l)"
-          echo "=== Checking Xorg packages ==="
-          ls -la xserver-xorg*.deb 2>/dev/null || echo "No xserver-xorg packages found"
+          echo "=== Checking X11 packages ==="
           ls -la xinit*.deb 2>/dev/null || echo "No xinit packages found"
+
+      - name: Build Xorg Server from source
+        if: env.DESKTOP != 'none'
+        run: |
+          echo "=== Building Xorg Server from source ==="
+          sudo apt-get install -y build-essential autoconf automake libtool pkg-config git
+          sudo apt-get build-dep -y xserver-xorg-core
+          git clone https://gitlab.freedesktop.org/xorg/xserver.git /tmp/xserver
+          cd /tmp/xserver
+          git checkout xorg-server-21.1.11
+          ./autogen.sh --prefix=/usr --enable-dri3 --enable-config-udev
+          make -j$(nproc)
+          mkdir -p /tmp/xorg-install
+          make DESTDIR=/tmp/xorg-install install
+          echo "=== Xorg build complete ==="
+          ls -la /tmp/xorg-install/usr/bin/Xorg 2>/dev/null || echo "Xorg binary not found"
+          cp -a /tmp/xorg-install/usr/* /tmp/x11-debs-extracted/ 2>/dev/null || true
 
       - name: Install desktop into rootfs
         if: env.DESKTOP != 'none'
@@ -560,42 +576,29 @@ jobs:
             dpkg-deb -x "$f" "$R/" 2>/dev/null && EX=$((EX+1))
           done
           echo "Extracted $EX debs"
+
+          echo "=== Installing compiled Xorg Server ==="
+          if [ -d "/tmp/xorg-install/usr" ]; then
+            echo "Copying compiled Xorg to rootfs..."
+            cp -a /tmp/xorg-install/usr/* "$R/usr/"
+            echo "Xorg installed from source"
+          else
+            echo "WARNING: Compiled Xorg not found"
+          fi
+
           echo "=== Checking Xorg installation ==="
-          ls -la "$R/usr/lib/xorg/" 2>/dev/null || echo "Xorg directory not found"
           ls -la "$R/usr/bin/Xorg" 2>/dev/null || echo "Xorg binary not found"
-          file "$R/usr/lib/xorg/Xorg" 2>/dev/null || echo "Xorg file info failed"
-          echo "=== Checking Xorg alternatives ==="
-          ls -la "$R/usr/bin/X*" 2>/dev/null || echo "No X binaries found"
-          ls -la "$R/usr/lib/xorg/"* 2>/dev/null || echo "No Xorg lib files found"
+          ls -la "$R/usr/lib/xorg/" 2>/dev/null || echo "Xorg directory not found"
+          file "$R/usr/bin/Xorg" 2>/dev/null || echo "Xorg file info failed"
 
           printf '%s\n' '/lib/x86_64-linux-gnu' '/usr/lib/x86_64-linux-gnu' '/lib64' '/usr/lib64' > "$R/etc/ld.so.conf"
           chmod 644 "$R/etc/ld.so.conf"
           [ -x "$R/usr/sbin/ldconfig" ] && sudo chroot "$R" /usr/sbin/ldconfig 2>/dev/null || true
 
-          echo "=== Searching for Xorg executable ==="
-          XORG_BIN=""
-          for path in "$R/usr/bin/Xorg" "$R/usr/bin/X" "$R/usr/lib/xorg/Xorg" "$R/usr/lib/x86_64-linux-gnu/xorg/Xorg"; do
-            if [ -x "$path" ]; then
-              echo "Found Xorg at: $path"
-              XORG_BIN="$path"
-              break
-            fi
-          done
-
-          if [ -z "$XORG_BIN" ]; then
-            echo "WARNING: Xorg not found, searching..."
-            find "$R/usr" -name "Xorg" -type f 2>/dev/null | head -5
-            find "$R/usr" -name "X" -type f -executable 2>/dev/null | head -5
-          fi
-
-          if [ -n "$XORG_BIN" ] && [ ! -e "$R/usr/bin/Xorg" ]; then
-            echo "Creating symlink: /usr/bin/Xorg -> $XORG_BIN"
-            ln -sf "$XORG_BIN" "$R/usr/bin/Xorg"
-          fi
-          if [ -n "$XORG_BIN" ] && [ ! -e "$R/usr/lib/xorg/Xorg" ]; then
-            echo "Creating symlink: /usr/lib/xorg/Xorg -> $XORG_BIN"
+          if [ ! -e "$R/usr/lib/xorg/Xorg" ] && [ -x "$R/usr/bin/Xorg" ]; then
+            echo "Creating symlink: /usr/lib/xorg/Xorg -> /usr/bin/Xorg"
             mkdir -p "$R/usr/lib/xorg"
-            ln -sf "$XORG_BIN" "$R/usr/lib/xorg/Xorg"
+            ln -sf /usr/bin/Xorg "$R/usr/lib/xorg/Xorg"
           fi
 
           mkdir -p "$R/etc/X11/xinit" "$R/root"
