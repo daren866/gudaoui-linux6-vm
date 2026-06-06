@@ -4,10 +4,24 @@ on:
   push:
     branches: [ "main", "master" ]
   workflow_dispatch:
+    inputs:
+      desktop:
+        description: 'Desktop environment (none/icewm/fluxbox/both)'
+        required: false
+        default: 'none'
+        type: choice
+        options:
+          - none
+          - icewm
+          - fluxbox
+          - both
 
 permissions:
   contents: write
   actions: read
+
+env:
+  DESKTOP: ${{ github.event.inputs.desktop || 'none' }}
 
 jobs:
   build:
@@ -26,14 +40,14 @@ jobs:
         id: set-release-info
         run: |
           UNIX_TIMESTAMP=$(date +%s)
-          echo "Unix 时间戳: $UNIX_TIMESTAMP"
+          echo "Unix timestamp: $UNIX_TIMESTAMP"
           RELEASE_NUMBER=$((UNIX_TIMESTAMP * 9178666))
-          echo "Release 数字: $RELEASE_NUMBER"
-          RELEASE_TITLE="Linux6 虚拟机版-${RELEASE_NUMBER}"
-          echo "Release 标题: $RELEASE_TITLE"
-          ISO_NAME="linux6-vm-${UNIX_TIMESTAMP}.iso"
+          echo "Release number: $RELEASE_NUMBER"
+          RELEASE_TITLE="GudaoUI Linux 6.18 VM-${RELEASE_NUMBER}"
+          echo "Release title: $RELEASE_TITLE"
+          ISO_NAME="gudaoui-linux6-vm-${UNIX_TIMESTAMP}.iso"
           echo "release_title=$RELEASE_TITLE" >> $GITHUB_OUTPUT
-          echo "release_tag=linux6-vm-${UNIX_TIMESTAMP}" >> $GITHUB_OUTPUT
+          echo "release_tag=gudaoui-linux6-vm-${UNIX_TIMESTAMP}" >> $GITHUB_OUTPUT
           echo "iso_name=$ISO_NAME" >> $GITHUB_OUTPUT
           echo "release_number=$RELEASE_NUMBER" >> $GITHUB_OUTPUT
           echo "RELEASE_TITLE=$RELEASE_TITLE" >> $GITHUB_ENV
@@ -59,24 +73,24 @@ jobs:
 
       - name: Check cache status
         run: |
-          echo "## 🔍 缓存状态" >> $GITHUB_STEP_SUMMARY
+          echo "## Cache Status" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 内核缓存" >> $GITHUB_STEP_SUMMARY
+          echo "### Kernel Cache" >> $GITHUB_STEP_SUMMARY
           if [[ "${{ steps.kernel-cache.outputs.cache-hit }}" == "true" ]]; then
-            echo "✅ **内核缓存命中！**" >> $GITHUB_STEP_SUMMARY
-            echo "缓存 Key: \`${{ steps.kernel-cache.outputs.primary-key }}\`" \
+            echo "**Kernel cache HIT!**" >> $GITHUB_STEP_SUMMARY
+            echo "Cache key: \`${{ steps.kernel-cache.outputs.primary-key }}\`" \
               >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ 内核缓存未命中" >> $GITHUB_STEP_SUMMARY
+            echo "Kernel cache MISS" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### BusyBox 缓存" >> $GITHUB_STEP_SUMMARY
+          echo "### BusyBox Cache" >> $GITHUB_STEP_SUMMARY
           if [[ "${{ steps.busybox-cache.outputs.cache-hit }}" == "true" ]]; then
-            echo "✅ **BusyBox 缓存命中！**" >> $GITHUB_STEP_SUMMARY
-            echo "缓存 Key: \`${{ steps.busybox-cache.outputs.primary-key }}\`" \
+            echo "**BusyBox cache HIT!**" >> $GITHUB_STEP_SUMMARY
+            echo "Cache key: \`${{ steps.busybox-cache.outputs.primary-key }}\`" \
               >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ BusyBox 缓存未命中" >> $GITHUB_STEP_SUMMARY
+            echo "BusyBox cache MISS" >> $GITHUB_STEP_SUMMARY
           fi
 
       - name: Install dependencies
@@ -103,23 +117,23 @@ jobs:
 
       - name: Install libmbedtls-dev
         run: |
-          echo "🔐 安装 mbedtls 开发库..."
+          echo "Installing mbedtls development library..."
           sudo apt-get update
           sudo apt-get install -y libmbedtls-dev
-          echo "✅ mbedtls 开发库安装完成"
+          echo "mbedtls development library installed successfully"
 
       - name: Download kernel source
         if: steps.kernel-cache.outputs.cache-hit != 'true'
         run: |
-          echo "📥 下载内核源码 linux-6.18..."
+          echo "Downloading kernel source linux-6.18..."
           wget -q https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.tar.xz
           tar -xf linux-6.18.tar.xz
-          echo "✅ 内核源码下载完成"
+          echo "Kernel source download complete"
 
       - name: Configure kernel
         run: |
           cd linux-6.18
-          echo "📝 配置内核..."
+          echo "Configuring kernel..."
           wget -q -O .config.original \
             https://raw.githubusercontent.com/puppylinux-woof-CE/woof-CE/testing/kernel-kit/configs_x86_64/DOTconfig-6.18.1-x86_64 \
             || true
@@ -128,12 +142,12 @@ jobs:
           else
             make defconfig
           fi
-          echo "🔧 应用虚拟机优化（驱动编译为模块）..."
-          # 基础 VirtIO 支持
+          echo "Applying VM optimizations (drivers compiled as modules)..."
+          # Base VirtIO support
           scripts/config --enable VIRTIO
           scripts/config --enable VIRTIO_PCI
           scripts/config --enable VIRTIO_BLK
-          # 网络驱动全部编译为模块
+          # Network drivers as modules
           scripts/config --module VIRTIO_NET
           scripts/config --module VMXNET3
           scripts/config --module E1000
@@ -142,26 +156,26 @@ jobs:
           scripts/config --module 8139TOO
           scripts/config --module E100
           scripts/config --module NE2K_PCI
-          # 关键修复：将 failover 相关也编译为模块，避免符号冲突
+          # Critical fix: compile failover as module to avoid duplicate symbols
           scripts/config --module FAILOVER
           scripts/config --module NET_FAILOVER
-          # 网络自动配置所需的内核选项
+          # Network auto-configuration kernel options
           scripts/config --enable PACKET
           scripts/config --enable UNIX
           scripts/config --enable INET
           scripts/config --enable IP_PNP
           scripts/config --enable IP_PNP_DHCP
-          # 启用网络设备支持
+          # Enable network device support
           scripts/config --enable NETDEVICES
           scripts/config --enable NET_CORE
           scripts/config --enable NET_VENDOR_INTEL
           scripts/config --enable NET_VENDOR_VIA
           scripts/config --enable NET_VENDOR_REALTEK
-          # 禁用无关功能
+          # Disable unnecessary features
           scripts/config --disable SOUND
           scripts/config --disable USB_SUPPORT
           scripts/config --disable WLAN
-          # 电源管理
+          # Power management
           scripts/config --enable POWER_SUPPLY
           scripts/config --enable SUSPEND
           scripts/config --enable HIBERNATION
@@ -175,21 +189,21 @@ jobs:
       - name: Force kernel config to use modules (fix duplicate symbol)
         run: |
           cd linux-6.18
-          echo "🔧 强制将相关选项设为模块..."
-          # 直接修改 .config 文件，确保以下选项为 m
+          echo "Force-setting relevant options to module..."
+          # Directly patch .config to ensure these are set to m
           sed -i 's/^CONFIG_FAILOVER=.*/CONFIG_FAILOVER=m/' .config
           sed -i 's/^CONFIG_NET_FAILOVER=.*/CONFIG_NET_FAILOVER=m/' .config
           sed -i 's/^CONFIG_VIRTIO_NET=.*/CONFIG_VIRTIO_NET=m/' .config
           sed -i 's/^CONFIG_VMXNET3=.*/CONFIG_VMXNET3=m/' .config
-          # 如果这些选项原本不存在（被注释），则添加
+          # Add options if they do not exist (were commented out)
           grep -q "^CONFIG_FAILOVER=" .config || echo "CONFIG_FAILOVER=m" >> .config
           grep -q "^CONFIG_NET_FAILOVER=" .config || echo "CONFIG_NET_FAILOVER=m" >> .config
           grep -q "^CONFIG_VIRTIO_NET=" .config || echo "CONFIG_VIRTIO_NET=m" >> .config
           grep -q "^CONFIG_VMXNET3=" .config || echo "CONFIG_VMXNET3=m" >> .config
-          # 重新生成依赖
+          # Regenerate dependencies
           make olddefconfig
-          # 验证配置
-          echo "=== 验证关键选项 ==="
+          # Verify
+          echo "=== Verifying key options ==="
           grep -E "CONFIG_(FAILOVER|NET_FAILOVER|VIRTIO_NET|VMXNET3)=" .config
 
       - name: Build kernel image (if needed)
@@ -197,30 +211,30 @@ jobs:
           cd linux-6.18
           if [ -f "arch/x86/boot/bzImage" ] && \
              [ "${{ steps.kernel-cache.outputs.cache-hit }}" == "true" ]; then
-            echo "✅ 使用缓存的内核镜像，跳过编译"
+            echo "Using cached kernel image, skipping build"
           else
-            echo "🔨 编译内核镜像中..."
+            echo "Building kernel image..."
             start_time=$(date +%s)
             make -j$(nproc) bzImage
             end_time=$(date +%s)
             duration=$((end_time - start_time))
-            echo "✅ 内核镜像编译完成，耗时: $((duration / 60)) 分钟"
+            echo "Kernel image built in $((duration / 60)) minutes"
           fi
-          echo "内核位置: $(pwd)/arch/x86/boot/bzImage"
+          echo "Kernel location: $(pwd)/arch/x86/boot/bzImage"
           ls -lh arch/x86/boot/bzImage
 
       - name: Build kernel modules (if needed)
         run: |
           cd linux-6.18
           if [ -f "modules.tar.gz" ]; then
-            echo "✅ 模块包已存在，跳过编译"
+            echo "Modules archive already exists, skipping build"
           else
-            echo "🔨 编译内核模块中..."
+            echo "Building kernel modules..."
             start_time=$(date +%s)
             make modules_prepare
             make -j$(nproc) modules
             if [ ! -f "modules.builtin" ]; then
-              echo "🔧 生成 modules.builtin..."
+              echo "Generating modules.builtin..."
               make modules.builtin
             fi
             mkdir -p ../modules-install
@@ -235,24 +249,24 @@ jobs:
             rm -rf ../modules-install
             end_time=$(date +%s)
             duration=$((end_time - start_time))
-            echo "✅ 内核模块编译打包完成，耗时: $((duration / 60)) 分钟"
+            echo "Kernel modules built and packaged in $((duration / 60)) minutes"
           fi
           if [ -f "modules.tar.gz" ]; then
-            echo "模块包大小: $(du -h modules.tar.gz | cut -f1)"
+            echo "Modules archive size: $(du -h modules.tar.gz | cut -f1)"
           fi
 
       - name: Download BusyBox
         if: steps.busybox-cache.outputs.cache-hit != 'true'
         run: |
-          echo "📥 下载 BusyBox 1.36.1..."
+          echo "Downloading BusyBox 1.36.1..."
           wget -q https://busybox.net/downloads/busybox-1.36.1.tar.bz2
           tar -xf busybox-1.36.1.tar.bz2
-          echo "✅ BusyBox 下载完成"
+          echo "BusyBox download complete"
 
       - name: Configure BusyBox
         run: |
           cd busybox-1.36.1
-          echo "🔧 配置 BusyBox..."
+          echo "Configuring BusyBox..."
           make defconfig
           sed -i 's/# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
           sed -i 's/# CONFIG_ASH is not set/CONFIG_ASH=y/' .config
@@ -266,9 +280,9 @@ jobs:
           sed -i 's/# CONFIG_FEATURE_PS_LONG is not set/CONFIG_FEATURE_PS_LONG=y/' .config
           sed -i 's/# CONFIG_FEATURE_TOP_CPU_USAGE_PERCENTAGE is not set/CONFIG_FEATURE_TOP_CPU_USAGE_PERCENTAGE=y/' .config
           sed -i 's/# CONFIG_FEATURE_SHUTDOWN_LOGIN is not set/CONFIG_FEATURE_SHUTDOWN_LOGIN=y/' .config
-          # 启用 udhcpc
+          # Enable udhcpc
           sed -i 's/# CONFIG_UDHCPC is not set/CONFIG_UDHCPC=y/' .config
-          # 启用 ifconfig, route, ip 等网络工具
+          # Enable networking tools: ifconfig, route, ip
           sed -i 's/# CONFIG_IFCONFIG is not set/CONFIG_IFCONFIG=y/' .config
           sed -i 's/# CONFIG_ROUTE is not set/CONFIG_ROUTE=y/' .config
           sed -i 's/# CONFIG_IP is not set/CONFIG_IP=y/' .config
@@ -284,18 +298,18 @@ jobs:
           cd busybox-1.36.1
           if [ -f "busybox" ] && \
              [ "${{ steps.busybox-cache.outputs.cache-hit }}" == "true" ]; then
-            echo "✅ 使用缓存的 BusyBox，跳过编译"
+            echo "Using cached BusyBox, skipping build"
           else
-            echo "🔨 编译 BusyBox 中..."
+            echo "Building BusyBox..."
             make -j$(nproc)
             make install
-            echo "✅ BusyBox 编译完成"
+            echo "BusyBox build complete"
           fi
           ls -lh busybox
 
       - name: Build MicroPython from source
         run: |
-          echo "🐍 从源码编译 MicroPython x64（强制禁用 cryptolib，启用 mbedtls）..."
+          echo "Building MicroPython x64 from source (statically linked with mbedtls, cryptolib disabled)..."
           mkdir -p python-root/usr/local/bin
           mkdir -p python-root/home
           git clone https://github.com/micropython/micropython.git
@@ -305,7 +319,7 @@ jobs:
           make -C mpy-cross
           cd ports/unix
           printf '%s\n' \
-            '# 模块配置 - 强制禁用 cryptolib，使用 mbedtls 提供 SSL 和哈希' \
+            '# Module config: disable cryptolib, use mbedtls for SSL and hashing' \
             'MICROPY_PY_BTREE = 0' \
             'MICROPY_PY_SSL = 1' \
             'MICROPY_SSL_MBEDTLS = 1' \
@@ -330,14 +344,14 @@ jobs:
           elif [ -f "build-standard/micropython" ]; then
             cp build-standard/micropython ../../../python-root/usr/local/bin/
           else
-            echo "❌ MicroPython 编译失败: 找不到 micropython 可执行文件"
+            echo "ERROR: MicroPython build failed: micropython binary not found"
             exit 1
           fi
           if [ -f "../../../python-root/usr/local/bin/micropython" ]; then
-            echo "✅ MicroPython 编译成功"
+            echo "MicroPython built successfully"
             file ../../../python-root/usr/local/bin/micropython
           else
-            echo "❌ MicroPython 编译失败"
+            echo "ERROR: MicroPython build failed"
             exit 1
           fi
           cd ../../..
@@ -361,21 +375,21 @@ jobs:
           ln -sf micropython python
           ln -sf micropython python3
           cd ../../../..
-          echo "✅ MicroPython 编译完成"
-          echo "MicroPython 二进制大小: $(du -h python-root/usr/local/bin/micropython | cut -f1)"
-          echo "Python 命令路径: $(ls -la python-root/usr/local/bin/python*)"
+          echo "MicroPython build complete"
+          echo "MicroPython binary size: $(du -h python-root/usr/local/bin/micropython | cut -f1)"
+          echo "Python symlinks: $(ls -la python-root/usr/local/bin/python*)"
 
       - name: Create rootfs (to be squashfs)
         run: |
-          echo "📦 创建 rootfs 目录（将用于 squashfs）..."
+          echo "Creating rootfs directory (will be used for squashfs)..."
           mkdir -p rootfs/{bin,sbin,usr/bin,usr/sbin,usr/local/bin,etc,proc,sys,dev,lib,lib64,tmp,var,run,root,home,usr/share/udhcpc,dev/shm}
           cp -a busybox-1.36.1/_install/* rootfs/
           cp -a python-root/* rootfs/
 
-          # 创建 udhcpc 默认脚本
+          # Create udhcpc default script
           cat > rootfs/usr/share/udhcpc/default.script << 'EOF'
           #!/bin/sh
-          # udhcpc 默认脚本 - 配置网络接口
+          # udhcpc default script - configure network interface
           INTERFACE="$1"
           [ -n "$INTERFACE" ] || exit 1
 
@@ -417,19 +431,19 @@ jobs:
           EOF
           chmod +x rootfs/usr/share/udhcpc/default.script
 
-          # 解压内核模块
+          # Extract kernel modules
           if [ -f linux-6.18/modules.tar.gz ]; then
-            echo "📦 解压内核模块到 rootfs..."
+            echo "Extracting kernel modules into rootfs..."
             tar -xzf linux-6.18/modules.tar.gz -C rootfs/
           else
-            echo "⚠️ 未找到内核模块包，网络驱动可能缺失"
+            echo "WARNING: Kernel modules archive not found, network drivers may be missing"
           fi
 
           if [ ! -f "rootfs/usr/local/bin/micropython" ]; then
-            echo "❌ MicroPython binary not found in rootfs!"
+            echo "ERROR: MicroPython binary not found in rootfs!"
             exit 1
           fi
-          echo "✅ MicroPython binary found in rootfs: $(file rootfs/usr/local/bin/micropython)"
+          echo "MicroPython binary found in rootfs: $(file rootfs/usr/local/bin/micropython)"
           chmod 555 rootfs/usr/local/bin/micropython
           cd rootfs/usr/local/bin
           if [ -f "micropython" ] && [ ! -L "python" ]; then
@@ -448,7 +462,7 @@ jobs:
           sudo mknod -m 660 rootfs/dev/tty3 c 4 3 || true
           sudo mknod -m 660 rootfs/dev/tty4 c 4 4 || true
 
-          # 创建 about 命令
+          # Create about command
           cat > rootfs/usr/local/bin/about << 'EOF'
           #!/bin/sh
           echo "====================="
@@ -463,6 +477,7 @@ jobs:
           echo "  about     - Show this information"
           echo "  calc      - Simple calculator"
           echo "  python    - MicroPython interpreter"
+          echo "  desktop   - Launch desktop environment"
           echo "  reboot    - Restart system"
           echo "  poweroff  - Shutdown system"
           echo ""
@@ -474,7 +489,7 @@ jobs:
           EOF
           chmod +x rootfs/usr/local/bin/about
 
-          # 创建 calc 命令
+          # Create calc command
           cat > rootfs/usr/local/bin/calc << 'EOF'
           #!/bin/sh
           if [ $# -eq 0 ]; then
@@ -493,7 +508,7 @@ jobs:
           EOF
           chmod +x rootfs/usr/local/bin/calc
 
-          # 创建 reboot 命令
+          # Create reboot command
           cat > rootfs/usr/local/bin/reboot << 'EOF'
           #!/bin/sh
           echo "System is rebooting..."
@@ -502,7 +517,7 @@ jobs:
           EOF
           chmod +x rootfs/usr/local/bin/reboot
 
-          # 创建 poweroff 命令
+          # Create poweroff command
           cat > rootfs/usr/local/bin/poweroff << 'EOF'
           #!/bin/sh
           echo "System is powering off..."
@@ -519,8 +534,8 @@ jobs:
           ln -sf poweroff halt || true
           cd ../../..
 
-          # 创建 init 脚本 (最终版本，包含最终静态 IP 保障)
-          cat > rootfs/init << 'EOF'
+          # Create init script (with desktop support and static IP fallback)
+          cat > rootfs/init << 'INITEOF'
           #!/bin/sh
 
           export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin
@@ -538,6 +553,8 @@ jobs:
           /bin/busybox mkdir -p /dev/shm /run/lock /etc/profile.d
           /bin/busybox mknod -m 660 /dev/tty1 c 4 1 2>/dev/null || true
           /bin/busybox mknod -m 660 /dev/tty2 c 4 2 2>/dev/null || true
+          /bin/busybox mknod -m 660 /dev/tty3 c 4 3 2>/dev/null || true
+          /bin/busybox mknod -m 660 /dev/tty4 c 4 4 2>/dev/null || true
           /bin/busybox echo "gudao-ui" > /proc/sys/kernel/hostname 2>/dev/null || true
           /bin/busybox --install -s
 
@@ -569,11 +586,11 @@ jobs:
               sleep 3
               echo "  Starting udhcpc on $iface (timeout 15s)..."
               if udhcpc -i "$iface" -s /usr/share/udhcpc/default.script -n -t 8 -T 3 -A 8 2>&1; then
-                  echo "  ✅ DHCP succeeded on $iface"
+                  echo "  DHCP succeeded on $iface"
                   CONFIGURED=1
                   break
               else
-                  echo "  ⚠️ DHCP failed on $iface"
+                  echo "  DHCP failed on $iface"
                   echo "  Trying static IP fallback (10.0.2.15/24)..."
                   ip addr add 10.0.2.15/24 dev "$iface" 2>/dev/null
                   ip link set "$iface" up 2>/dev/null
@@ -585,23 +602,17 @@ jobs:
               fi
           done
 
-          # ===== 最终保障：如果仍然没有 IP，强制设置静态 IP =====
+          # Final fallback: force static IP if still no address
           if ! ip addr show 2>/dev/null | grep -q "inet "; then
               echo ""
               echo "=== Final Fallback: Setting Static IP ==="
-              # 等网卡醒过来
               sleep 2
-              # 给网卡配IP（虚拟机NAT模式固定是10.0.2.15）
               ip addr add 10.0.2.15/24 dev eth0 2>/dev/null
-              # 把网卡叫醒
               ip link set eth0 up
-              # 配网关
               ip route add default via 10.0.2.2 2>/dev/null
-              # 配DNS
               echo "nameserver 8.8.8.8" > /etc/resolv.conf
-              echo "  ✅ Static IP configured: 10.0.2.15/24"
+              echo "  Static IP configured: 10.0.2.15/24"
           fi
-          # ====================================================
 
           echo ""
           echo "=== Network Status ==="
@@ -622,6 +633,7 @@ jobs:
           echo "  about     - System information"
           echo "  calc      - Calculator (e.g., calc 1+1)"
           echo "  python    - MicroPython interpreter"
+          echo "  desktop   - Launch desktop environment"
           echo "  reboot    - Restart system"
           echo "  poweroff  - Shutdown system"
           echo ""
@@ -634,11 +646,52 @@ jobs:
           IP_ADDR=$(ip addr show 2>/dev/null | grep "inet " | head -1 | awk '{print $2}' | cut -d/ -f1)
           [ -n "$IP_ADDR" ] && echo "IP Address: ${IP_ADDR}"
           echo ""
-          echo "Welcome to GudaoUI Linux!"
-          echo "========================================"
-          echo ""
-          exec /bin/sh
-          EOF
+
+          # Check if desktop environment should launch
+          DESKTOP_WM=""
+          if [ -f /proc/cmdline ]; then
+            DESKTOP_WM=$(cat /proc/cmdline | tr ' ' '\n' | grep "^desktop=" | cut -d= -f2)
+          fi
+          if [ -z "$DESKTOP_WM" ] && [ -f /etc/default-desktop ]; then
+            DESKTOP_WM=$(cat /etc/default-desktop)
+          fi
+
+          HAS_DESKTOP=0
+          if [ -x /usr/bin/startx ] || [ -x /usr/bin/xinit ]; then
+            HAS_DESKTOP=1
+          fi
+
+          if [ -n "$DESKTOP_WM" ] && [ "$DESKTOP_WM" != "console" ] && [ "$HAS_DESKTOP" -eq 1 ]; then
+            echo "Desktop mode: $DESKTOP_WM"
+            echo "========================================"
+            echo ""
+            export HOME=/root
+            export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+            case "$DESKTOP_WM" in
+              icewm)
+                echo "Launching IceWM..."
+                start-desktop icewm
+                ;;
+              fluxbox)
+                echo "Launching Fluxbox..."
+                start-desktop fluxbox
+                ;;
+              both)
+                echo "Launching Fluxbox (use start-desktop icewm to switch)..."
+                start-desktop fluxbox
+                ;;
+              *)
+                echo "Launching default desktop..."
+                start-desktop fluxbox
+                ;;
+            esac
+          else
+            echo "Welcome to GudaoUI Linux!"
+            echo "========================================"
+            echo ""
+            exec /bin/sh
+          fi
+          INITEOF
           chmod +x rootfs/init
 
           echo "root:x:0:0:root:/root:/bin/sh" > rootfs/etc/passwd
@@ -658,17 +711,282 @@ jobs:
             'export PS1='\''\u@\h:\w\$ '\' \
             'alias ll='\''ls -la'\' \
             'alias python='\''micropython'\' > rootfs/etc/profile
-          echo "rootfs 准备完成，大小: $(du -sh rootfs | cut -f1)"
+          echo "rootfs ready, size: $(du -sh rootfs | cut -f1)"
+
+      - name: Download X11 and desktop packages
+        if: env.DESKTOP != 'none'
+        run: |
+          echo "Downloading X11 and desktop environment packages (desktop=${{ env.DESKTOP }})..."
+          sudo apt-get update
+
+          # Core X11 packages
+          PACKAGES="xserver-xorg-core xserver-xorg xinit xterm x11-utils"
+          PACKAGES="$PACKAGES xserver-xorg-input-libinput"
+          PACKAGES="$PACKAGES xfonts-base"
+
+          case "${{ env.DESKTOP }}" in
+            icewm)   PACKAGES="$PACKAGES icewm" ;;
+            fluxbox) PACKAGES="$PACKAGES fluxbox" ;;
+            both)    PACKAGES="$PACKAGES icewm fluxbox" ;;
+          esac
+
+          echo "Base package list: $PACKAGES"
+          echo ""
+
+          # Recursively resolve all dependencies
+          mkdir -p /tmp/x11-debs
+          cd /tmp/x11-debs
+
+          ALL_DEPS=$(apt-cache depends --recurse --no-recommends --no-suggests \
+            --no-conflicts --no-breaks --no-replaces --no-enhances \
+            $PACKAGES 2>/dev/null | grep -E "^\w" | sort -u)
+
+          # Filter to installable packages
+          INSTALLABLE=""
+          for pkg in $ALL_DEPS; do
+            if apt-cache show "$pkg" &>/dev/null; then
+              INSTALLABLE="$INSTALLABLE $pkg"
+            fi
+          done
+
+          echo "Total packages to download: $(echo $INSTALLABLE | wc -w)"
+          echo ""
+
+          # Download
+          apt-get download $INSTALLABLE 2>&1 | tail -5
+          DOWNLOAD_COUNT=$(ls *.deb 2>/dev/null | wc -l)
+          echo ""
+          echo "Download complete: $DOWNLOAD_COUNT .deb files"
+          echo "Total size: $(du -sh . | cut -f1)"
+
+      - name: Install desktop environment into rootfs
+        if: env.DESKTOP != 'none'
+        run: |
+          echo "Installing desktop environment into rootfs..."
+          cd /tmp/x11-debs
+
+          # Extract all debs into rootfs
+          EXTRACTED=0
+          for deb in *.deb; do
+            if [ -f "$deb" ]; then
+              dpkg-deb -x "$deb" ../../rootfs/ 2>/dev/null && EXTRACTED=$((EXTRACTED+1))
+            fi
+          done
+          echo "Extracted $EXTRACTED deb packages"
+          cd ../../
+
+          # Dynamic linker configuration (required for X11)
+          cat > rootfs/etc/ld.so.conf << 'EOF'
+          /lib/x86_64-linux-gnu
+          /usr/lib/x86_64-linux-gnu
+          /lib64
+          /usr/lib64
+          /usr/lib/x86_64-linux-gnu/dri
+          EOF
+          chmod 644 rootfs/etc/ld.so.conf
+
+          # Run ldconfig if available
+          if [ -x rootfs/usr/sbin/ldconfig ]; then
+            echo "Running ldconfig..."
+            sudo chroot rootfs /usr/sbin/ldconfig 2>/dev/null || true
+          fi
+
+          # Create X11 config directories
+          mkdir -p rootfs/etc/X11/xinit
+
+          # Create default .xinitrc
+          cat > rootfs/etc/X11/xinit/xinitrc << 'EOF'
+          #!/bin/sh
+          # Default xinitrc - overridden by ~/.xinitrc
+          if [ -f $HOME/.xinitrc ]; then
+            exec $HOME/.xinitrc
+          fi
+          exec xterm
+          EOF
+          chmod +x rootfs/etc/X11/xinit/xinitrc
+
+          # Create root user .xinitrc
+          cat > rootfs/root/.xinitrc << 'EOF'
+          #!/bin/sh
+          export XDG_SESSION_TYPE=x11
+          export XDG_CURRENT_DESKTOP="GudaoUI"
+          export XTERM_TERM=xterm-256color
+
+          # Start xterm as basic terminal
+          xterm -geometry 100x30+50+50 -bg black -fg green -title "GudaoUI Linux" &
+          XPID=$!
+
+          sleep 1
+
+          # Execute window manager (set by start-desktop)
+          if [ -n "$WM_CMD" ]; then
+            exec $WM_CMD
+          fi
+
+          wait $XPID
+          EOF
+          chmod +x rootfs/root/.xinitrc
+
+          # Create desktop launch script
+          cat > rootfs/usr/local/bin/start-desktop << 'DESKTOPSCRIPT'
+          #!/bin/sh
+          # GudaoUI Desktop Launcher
+          # Usage: start-desktop [icewm|fluxbox]
+
+          export HOME=/root
+          export DISPLAY=:0
+          export XDG_SESSION_TYPE=x11
+          export XDG_CURRENT_DESKTOP="GudaoUI"
+
+          WM="${1:-fluxbox}"
+
+          case "$WM" in
+            icewm)
+              echo "Starting IceWM desktop..."
+              export WM_CMD="icewm --replace"
+              echo "exec icewm" > /root/.xinitrc
+              ;;
+            fluxbox)
+              echo "Starting Fluxbox desktop..."
+              export WM_CMD="fluxbox"
+              echo "exec fluxbox" > /root/.xinitrc
+              ;;
+            both)
+              echo "Starting Fluxbox desktop (primary)..."
+              export WM_CMD="fluxbox"
+              echo "exec fluxbox" > /root/.xinitrc
+              ;;
+            *)
+              echo "Starting minimal X11 session..."
+              echo "exec xterm" > /root/.xinitrc
+              ;;
+          esac
+
+          chmod +x /root/.xinitrc
+
+          # Launch X
+          if [ -x /usr/bin/startx ]; then
+            exec startx
+          elif [ -x /usr/bin/xinit ]; then
+            exec xinit -- /usr/bin/Xorg :0
+          else
+            echo "ERROR: No X init command found!"
+            echo "Available X binaries:"
+            ls -la /usr/bin/X* /usr/bin/startx /usr/bin/xinit 2>/dev/null
+            exit 1
+          fi
+          DESKTOPSCRIPT
+          chmod +x rootfs/usr/local/bin/start-desktop
+
+          # Create desktop helper command
+          cat > rootfs/usr/local/bin/desktop << 'EOF'
+          #!/bin/sh
+          echo "GudaoUI Desktop"
+          echo ""
+          echo "Available desktop environments:"
+          if command -v icewm >/dev/null 2>&1; then
+            echo "  1) IceWM    - run: start-desktop icewm"
+          fi
+          if command -v fluxbox >/dev/null 2>&1; then
+            echo "  2) Fluxbox  - run: start-desktop fluxbox"
+          fi
+          echo ""
+          echo "Quick launch (default Fluxbox):"
+          echo "  start-desktop"
+          echo ""
+
+          if [ -f /etc/default-desktop ]; then
+            DEFAULT_WM=$(cat /etc/default-desktop)
+            echo "Default: $DEFAULT_WM"
+            echo "Launching..."
+            start-desktop "$DEFAULT_WM"
+          else
+            echo "Launching (default Fluxbox)..."
+            start-desktop fluxbox
+          fi
+          EOF
+          chmod +x rootfs/usr/local/bin/desktop
+
+          # Write default desktop preference
+          case "${{ env.DESKTOP }}" in
+            icewm)   echo "icewm" > rootfs/etc/default-desktop ;;
+            fluxbox) echo "fluxbox" > rootfs/etc/default-desktop ;;
+            both)    echo "fluxbox" > rootfs/etc/default-desktop ;;
+          esac
+
+          # Fluxbox configuration
+          mkdir -p rootfs/root/.fluxbox
+          cat > rootfs/root/.fluxbox/init << 'EOF'
+          session.screen0.toolbar.visible: true
+          session.screen0.toolbar.widthPercent: 100
+          session.screen0.tabs.usePixmap: false
+          session.screen0.menu.moveOnResize: true
+          session.screen0.edgeSnapThreshold: 10
+          session.screen0.windowPlacement: RowSmartPlacement
+          session.screen0.focusNewWindows: true
+          session.screen0.focusModel: ClickFocus
+          EOF
+          chmod 644 rootfs/root/.fluxbox/init
+
+          cat > rootfs/root/.fluxbox/keys << 'EOF'
+          # Fluxbox key bindings
+          Mod1 F2 :ExecCommand:xterm &
+          Mod1 F3 :ExecCommand:xterm &
+          Mod1 F4 :Close
+          Mod1 Tab :NextWindow
+          Control Mod1 T :ExecCommand:xterm &
+          EOF
+          chmod 644 rootfs/root/.fluxbox/keys
+
+          cat > rootfs/root/.fluxbox/apps << 'EOF'
+          [app] (name=xterm) {geometry 100x30+50+50}
+          [app] (name=xterm) {sticky}
+          EOF
+          chmod 644 rootfs/root/.fluxbox/apps
+
+          # IceWM configuration
+          mkdir -p rootfs/root/.icewm
+          cat > rootfs/root/.icewm/preferences << 'EOF'
+          # IceWM Preferences
+          TaskBarShowClock = 1
+          TaskBarShowMemory = 1
+          TaskBarShowCPUStatus = 1
+          TaskBarShowWindows = 1
+          ShowProgramsMenu = 1
+          ShowThemesMenu = 1
+          ShowHelp = 0
+          ShowLogoutConfirmation = 1
+          ClockCommand = xclock -digital -24h -brief
+          ClockFmt = %H:%M
+          EOF
+          chmod 644 rootfs/root/.icewm/preferences
+
+          cat > rootfs/root/.icewm/theme << 'EOF'
+          Theme="default/default.theme"
+          EOF
+          chmod 644 rootfs/root/.icewm/theme
+
+          echo "Desktop environment installation complete"
+          echo ""
+          echo "Installed desktop components:"
+          [ -f rootfs/usr/bin/icewm ] && echo "  IceWM: /usr/bin/icewm"
+          [ -f rootfs/usr/bin/fluxbox ] && echo "  Fluxbox: /usr/bin/fluxbox"
+          [ -f rootfs/usr/bin/xterm ] && echo "  xterm: /usr/bin/xterm"
+          [ -f rootfs/usr/bin/startx ] && echo "  startx: /usr/bin/startx"
+          echo "  Script: rootfs/usr/local/bin/start-desktop"
+          echo "  Script: rootfs/usr/local/bin/desktop"
+          echo "X11 libraries: $(du -sh rootfs/usr/lib/x86_64-linux-gnu/ 2>/dev/null | cut -f1 || echo 'N/A')"
+          echo "Rootfs total size: $(du -sh rootfs | cut -f1)"
 
       - name: Create squashfs from rootfs
         run: |
-          echo "🗜️ 创建 squashfs 镜像..."
+          echo "Creating squashfs image..."
           mksquashfs rootfs rootfs.squashfs -comp xz -b 1M
-          echo "✅ squashfs 创建完成: $(du -h rootfs.squashfs | cut -f1)"
+          echo "Squashfs created: $(du -h rootfs.squashfs | cut -f1)"
 
       - name: Build initramfs for overlay boot
         run: |
-          echo "🛠️ 构建 initramfs（用于挂载 squashfs 和 overlay）..."
+          echo "Building initramfs (for squashfs and overlay mount)..."
           mkdir -p initramfs/{bin,dev,etc,proc,root,sys,mnt/iso,mnt/root,mnt/overlay,newroot}
           cp -a busybox-1.36.1/_install/* initramfs/
           sudo mknod -m 600 initramfs/dev/console c 5 1 || true
@@ -746,29 +1064,96 @@ jobs:
           cd initramfs
           find . | cpio -o -H newc | gzip > ../initramfs.cpio.gz
           cd ..
-          echo "✅ initramfs 创建完成: $(du -h initramfs.cpio.gz | cut -f1)"
+          echo "initramfs created: $(du -h initramfs.cpio.gz | cut -f1)"
 
       - name: Create bootable ISO
         run: |
-          echo "💿 创建启动 ISO..."
+          echo "Creating bootable ISO..."
           mkdir -p iso/boot/grub
           cp linux-6.18/arch/x86/boot/bzImage iso/boot/vmlinuz
           cp initramfs.cpio.gz iso/boot/initramfs.cpio.gz
           cp rootfs.squashfs iso/boot/rootfs.squashfs
-          printf '%s\n' \
-            'set default=0' \
-            'set timeout=3' \
-            'menuentry "GudaoUI Linux V1 with MicroPython (SquashFS+Overlay)" {' \
-            '  linux /boot/vmlinuz quiet' \
-            '  initrd /boot/initramfs.cpio.gz' \
-            '}' \
-            'menuentry "GudaoUI Linux V1 (Debug)" {' \
-            '  linux /boot/vmlinuz loglevel=7' \
-            '  initrd /boot/initramfs.cpio.gz' \
-            '}' > iso/boot/grub/grub.cfg
+
+          # Generate GRUB config based on desktop mode
+          cat > iso/boot/grub/grub.cfg << GRUBCFG
+          set default=0
+          set timeout=5
+
+          set menu_color_normal=cyan/blue
+          set menu_color_highlight=white/blue
+
+          GRUBCFG
+
+          case "${{ env.DESKTOP }}" in
+            none)
+              cat >> iso/boot/grub/grub.cfg << 'EOF'
+          menuentry "GudaoUI Linux V1 (Console)" {
+            linux /boot/vmlinuz quiet
+            initrd /boot/initramfs.cpio.gz
+          }
+          menuentry "GudaoUI Linux V1 (Debug)" {
+            linux /boot/vmlinuz loglevel=7
+            initrd /boot/initramfs.cpio.gz
+          }
+          EOF
+              ;;
+            icewm)
+              cat >> iso/boot/grub/grub.cfg << 'EOF'
+          menuentry ">>> GudaoUI Linux with IceWM Desktop <<<" {
+            linux /boot/vmlinuz quiet desktop=icewm
+            initrd /boot/initramfs.cpio.gz
+          }
+          menuentry "GudaoUI Linux (Console Mode)" {
+            linux /boot/vmlinuz quiet desktop=console
+            initrd /boot/initramfs.cpio.gz
+          }
+          menuentry "GudaoUI Linux (Debug + Desktop)" {
+            linux /boot/vmlinuz loglevel=7 desktop=icewm
+            initrd /boot/initramfs.cpio.gz
+          }
+          EOF
+              ;;
+            fluxbox)
+              cat >> iso/boot/grub/grub.cfg << 'EOF'
+          menuentry ">>> GudaoUI Linux with Fluxbox Desktop <<<" {
+            linux /boot/vmlinuz quiet desktop=fluxbox
+            initrd /boot/initramfs.cpio.gz
+          }
+          menuentry "GudaoUI Linux (Console Mode)" {
+            linux /boot/vmlinuz quiet desktop=console
+            initrd /boot/initramfs.cpio.gz
+          }
+          menuentry "GudaoUI Linux (Debug + Desktop)" {
+            linux /boot/vmlinuz loglevel=7 desktop=fluxbox
+            initrd /boot/initramfs.cpio.gz
+          }
+          EOF
+              ;;
+            both)
+              cat >> iso/boot/grub/grub.cfg << 'EOF'
+          menuentry ">>> GudaoUI Linux with Fluxbox <<<" {
+            linux /boot/vmlinuz quiet desktop=fluxbox
+            initrd /boot/initramfs.cpio.gz
+          }
+          menuentry ">>> GudaoUI Linux with IceWM <<<" {
+            linux /boot/vmlinuz quiet desktop=icewm
+            initrd /boot/initramfs.cpio.gz
+          }
+          menuentry "GudaoUI Linux (Console Mode)" {
+            linux /boot/vmlinuz quiet desktop=console
+            initrd /boot/initramfs.cpio.gz
+          }
+          menuentry "GudaoUI Linux (Debug + Fluxbox)" {
+            linux /boot/vmlinuz loglevel=7 desktop=fluxbox
+            initrd /boot/initramfs.cpio.gz
+          }
+          EOF
+              ;;
+          esac
+
           grub-mkrescue -o "$ISO_NAME" iso/
-          echo "✅ ISO 创建完成: $ISO_NAME"
-          echo "ISO 大小: $(du -h $ISO_NAME | cut -f1)"
+          echo "ISO created: $ISO_NAME"
+          echo "ISO size: $(du -h $ISO_NAME | cut -f1)"
 
       - name: Upload ISO to Artifacts
         uses: actions/upload-artifact@v4
@@ -783,32 +1168,35 @@ jobs:
           name: ${{ steps.set-release-info.outputs.release_title }}
           tag_name: ${{ steps.set-release-info.outputs.release_tag }}
           body: |
-            ## 🎉 GudaoUI Linux V1 with MicroPython (SquashFS + Overlay)
-            ### 📦 包含组件
-            - Linux 内核 6.18 (虚拟机优化版，驱动模块化，**支持 DHCP 自动获取 IP**)
-            - BusyBox 1.36.1 (静态编译，包含 udhcpc DHCP 客户端)
-            - **MicroPython v1.24.1** (从源码编译，静态链接，**启用 SSL 和加密库支持**)
-            ### 💻 可用命令
-            about - 显示系统信息
-            calc - 简单计算器 (如: calc 1+1)
-            python - MicroPython 解释器 (可直接运行)
-            reboot - 重启系统
-            poweroff - 关闭系统
-            ### 🌐 网络配置（自动）
-            - **自动获取 IP（DHCP）**：系统启动后自动检测网卡并获取 IP
-            - **固定 DNS**：114.114.114.114、8.8.8.8、223.5.5.5（启动时强制写入 /etc/resolv.conf）
-            - 内核已集成常见虚拟网卡驱动（作为模块）：
-              VIRTIO_NET、VMXNET3、E1000、PCNET32、8139CP、8139TOO、E100、NE2K_PCI
-            - 系统启动时会自动加载驱动并通过 DHCP 获取 IP
-            ### ⚡ 虚拟机优化
-            已启用 VirtIO 驱动和 ACPI 电源管理
-            ### 📀 文件系统架构
-            - 根文件系统为只读 squashfs，通过 overlayfs 与 tmpfs 合并，实现可写运行时环境
-            - 内核模块存放于 `/lib/modules`，启动时自动加载
-            ### 📊 构建信息
-            - 构建时间: $(date '+%Y-%m-%d %H:%M:%S')
-            - ISO 大小: $(du -h ${{ steps.set-release-info.outputs.iso_name }} | cut -f1)
-            - MicroPython 大小: ~300KB (静态链接，包含 SSL)
+            ## GudaoUI Linux V1 with MicroPython (SquashFS + Overlay)
+            ### Included Components
+            - Linux Kernel 6.18 (VM-optimized, modular drivers, **DHCP auto-config supported**)
+            - BusyBox 1.36.1 (statically compiled, includes udhcpc DHCP client)
+            - **MicroPython v1.24.1** (built from source, statically linked, **SSL and crypto support enabled**)
+            ${{ env.DESKTOP != 'none' && format('- Desktop environment: **{0}** (X11 + window manager)', env.DESKTOP) || '' }}
+            ### Available Commands
+            - `about` - Show system information
+            - `calc` - Simple calculator (e.g., calc 1+1)
+            - `python` - MicroPython interpreter
+            ${{ env.DESKTOP != 'none' && '- `desktop` - Launch desktop environment\n- `start-desktop icewm` - Launch IceWM\n- `start-desktop fluxbox` - Launch Fluxbox' || '' }}
+            - `reboot` - Restart system
+            - `poweroff` - Shutdown system
+            ### Network Configuration (Automatic)
+            - **DHCP auto-IP**: system detects NIC and obtains IP at boot
+            - **Fixed DNS**: 114.114.114.114, 8.8.8.8, 223.5.5.5 (written to /etc/resolv.conf at boot)
+            - Kernel includes common VM NIC drivers as modules:
+              VIRTIO_NET, VMXNET3, E1000, PCNET32, 8139CP, 8139TOO, E100, NE2K_PCI
+            - Drivers auto-load at boot and DHCP obtains IP automatically
+            ### VM Optimization
+            VirtIO drivers and ACPI power management enabled
+            ### Filesystem Architecture
+            - Root filesystem is read-only squashfs, merged with tmpfs via overlayfs for writable runtime
+            - Kernel modules stored in `/lib/modules`, auto-loaded at boot
+            ${{ env.DESKTOP != 'none' && '### Desktop Environment\n- Boot into desktop from GRUB menu (select the "Desktop" entry)\n- Or type `desktop` at the console to launch\n- Supported window managers: IceWM, Fluxbox\n- Terminal: xterm' || '' }}
+            ### Build Info
+            - Build time: $(date '+%Y-%m-%d %H:%M:%S')
+            - ISO size: $(du -h ${{ steps.set-release-info.outputs.iso_name }} | cut -f1)
+            - MicroPython size: ~300KB (statically linked, includes SSL)
           files: ${{ steps.set-release-info.outputs.iso_name }}
           draft: false
           prerelease: false
