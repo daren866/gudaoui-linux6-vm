@@ -171,7 +171,7 @@ jobs:
           done
           make olddefconfig
 
-      - name: Build kernel
+      - name: Build kernel as deb-pkg
         run: |
           cd linux-debian
           HIT="${{ steps.kernel-cache.outputs.cache-hit }}"
@@ -180,36 +180,39 @@ jobs:
             echo "Using cached kernel"
           else
             S=$(date +%s)
-            echo "=== Building kernel with $(nproc) cores ==="
-            make -j"$(nproc)" bzImage
+            echo "=== Building kernel deb-pkg with $(nproc) cores ==="
+            make -j"$(nproc)" deb-pkg LOCALVERSION=-gudaoui
             echo "Built in $(( ($(date +%s)-S)/60 )) min"
           fi
           ls -lh arch/x86/boot/bzImage
+          ls -lh ../*.deb 2>/dev/null || echo "No deb packages found"
 
-      - name: Build modules
+      - name: Install kernel deb
         run: |
-          cd linux-debian
+          WS="$GITHUB_WORKSPACE"
+          cd "$WS"
+          echo "=== Installing kernel packages ==="
+          ls -la *.deb 2>/dev/null || true
+          sudo dpkg -i linux-image-*.deb linux-headers-*.deb 2>/dev/null || true
+          echo "=== Kernel installed ==="
+          ls -la /boot/vmlinuz* 2>/dev/null || true
+          cp /boot/vmlinuz-*-gudaoui "$WS/linux-debian/arch/x86/boot/bzImage" 2>/dev/null || true
+          ls -lh "$WS/linux-debian/arch/x86/boot/bzImage"
+
+      - name: Build modules tarball
+        run: |
+          WS="$GITHUB_WORKSPACE"
+          cd "$WS/linux-debian"
           if [ -f modules.tar.gz ]; then
             echo "Modules exist, skipping"
           else
-            S=$(date +%s)
-            echo "=== Building modules with $(nproc) cores ==="
-            make modules_prepare
-            make -j"$(nproc)" modules
-            make modules.builtin 2>/dev/null || true
+            echo "=== Creating modules tarball ==="
             mkdir -p ../modules-install
-            make modules_install \
-              INSTALL_MOD_PATH=../modules-install
-            KVER=$(ls ../modules-install/lib/modules/ \
-              | head -1)
-            cp modules.builtin \
-              "../modules-install/lib/modules/${KVER}/" \
-              2>/dev/null || true
+            make modules_install INSTALL_MOD_PATH=../modules-install
             cd ../modules-install
             tar -czf ../linux-debian/modules.tar.gz lib
             cd ../linux-debian
             rm -rf ../modules-install
-            echo "Built in $(( ($(date +%s)-S)/60 )) min"
           fi
           du -h modules.tar.gz
 
