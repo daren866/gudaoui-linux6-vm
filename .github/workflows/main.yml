@@ -9,12 +9,13 @@ on:
       desktop:
         description: "Desktop env"
         required: false
-        default: "icewm"
+        default: "twm"
         type: choice
         options:
           - none
           - icewm
           - fluxbox
+          - twm
           - both
       rebuild:
         description: "Force rebuild (bypass cache)"
@@ -30,7 +31,7 @@ permissions:
   actions: read
 
 env:
-  DESKTOP: ${{ github.event.inputs.desktop || 'icewm' }}
+  DESKTOP: ${{ github.event.inputs.desktop || 'twm' }}
 
 jobs:
   build:
@@ -527,7 +528,8 @@ jobs:
           case "${{ env.DESKTOP }}" in
             icewm)   PKGS="$PKGS icewm" ;;
             fluxbox) PKGS="$PKGS fluxbox" ;;
-            both)    PKGS="$PKGS icewm fluxbox" ;;
+            twm)     PKGS="$PKGS twm" ;;
+            both)    PKGS="$PKGS icewm fluxbox twm" ;;
           esac
           echo "=== Packages to download ==="
           echo "$PKGS"
@@ -613,18 +615,19 @@ jobs:
             > "$R/usr/bin/startx"
           chmod +x "$R/usr/bin/startx"
 
-          printf '%s\n' '#!/bin/sh' 'export HOME=/root DISPLAY=:0' 'export XDG_SESSION_TYPE=x11' 'export XDG_CURRENT_DESKTOP=GudaoUI' 'WM="${1:-icewm}"' 'case "$WM" in' '  fluxbox) echo "exec fluxbox" > /root/.xinitrc ;;' '  *) echo "exec icewm --replace" > /root/.xinitrc ;;' 'esac' '/bin/busybox chmod +x /root/.xinitrc' 'if [ -x /usr/bin/startx ]; then exec startx' 'elif [ -x /usr/bin/xinit ]; then exec xinit -- /usr/bin/Xorg :0' 'else echo "ERROR: no X init"; exit 1; fi' \
+          printf '%s\n' '#!/bin/sh' 'export HOME=/root DISPLAY=:0' 'export XDG_SESSION_TYPE=x11' 'export XDG_CURRENT_DESKTOP=GudaoUI' 'WM="${1:-twm}"' 'case "$WM" in' '  icewm) echo "exec icewm --replace" > /root/.xinitrc ;;' '  fluxbox) echo "exec fluxbox" > /root/.xinitrc ;;' '  *) echo "exec twm" > /root/.xinitrc ;;' 'esac' '/bin/busybox chmod +x /root/.xinitrc' 'if [ -x /usr/bin/startx ]; then exec startx' 'elif [ -x /usr/bin/xinit ]; then exec xinit -- /usr/bin/Xorg :0' 'else echo "ERROR: no X init"; exit 1; fi' \
             > "$R/usr/local/bin/start-desktop"
           chmod +x "$R/usr/local/bin/start-desktop"
 
-          printf '%s\n' '#!/bin/sh' 'echo "GudaoUI Desktop"' '/bin/busybox command -v icewm >/dev/null 2>&1 && echo "  start-desktop icewm"' '/bin/busybox command -v fluxbox >/dev/null 2>&1 && echo "  start-desktop fluxbox"' 'if [ -f /etc/default-desktop ]; then W=$(/bin/busybox cat /etc/default-desktop); echo "Default: $W"; start-desktop "$W"' 'else start-desktop icewm; fi' \
+          printf '%s\n' '#!/bin/sh' 'echo "GudaoUI Desktop"' '/bin/busybox command -v icewm >/dev/null 2>&1 && echo "  start-desktop icewm"' '/bin/busybox command -v fluxbox >/dev/null 2>&1 && echo "  start-desktop fluxbox"' '/bin/busybox command -v twm >/dev/null 2>&1 && echo "  start-desktop twm"' 'if [ -f /etc/default-desktop ]; then W=$(/bin/busybox cat /etc/default-desktop); echo "Default: $W"; start-desktop "$W"' 'else start-desktop twm; fi' \
             > "$R/usr/local/bin/desktop"
           chmod +x "$R/usr/local/bin/desktop"
 
           case "${{ env.DESKTOP }}" in
             icewm) echo "icewm" > "$R/etc/default-desktop" ;;
             fluxbox) echo "fluxbox" > "$R/etc/default-desktop" ;;
-            both) echo "fluxbox" > "$R/etc/default-desktop" ;;
+            twm) echo "twm" > "$R/etc/default-desktop" ;;
+            both) echo "twm" > "$R/etc/default-desktop" ;;
           esac
 
           mkdir -p "$R/root/.fluxbox"
@@ -638,6 +641,11 @@ jobs:
           mkdir -p "$R/root/.icewm"
           printf '%s\n' 'TaskBarShowClock = 1' 'TaskBarShowMemory = 1' 'TaskBarShowCPUStatus = 1' 'TaskBarShowWindows = 1' 'ShowProgramsMenu = 1' 'ShowLogoutConfirmation = 1' 'ClockCommand = xclock -digital -24h -brief' 'ClockFmt = %H:%M' > "$R/root/.icewm/preferences"
           chmod 644 "$R/root/.icewm/preferences"
+          
+          mkdir -p "$R/root"
+          printf '%s\n' 'NoDefaults' 'RandomPlacement' 'Button1 = root:f.menu TwmRootMenu' 'Button2 = root:f.iconify' 'Button3 = root:f.resize' 'Button1 = title:f.move' 'Button2 = title:f.raise' 'Button3 = title:f.resize' 'Button1 = icon:f.iconify' 'Button2 = icon:f.raise' 'Button3 = icon:f.reshape' 'Button1 = frame:f.move' 'Button2 = frame:f.iconify' 'Button3 = frame:f.resize' 'Button1 = shape:f.reshape' 'Button2 = shape:f.iconify' 'Button3 = shape:f.resize' 'Button1 = quit:f.quit' 'Button1 = resize:f.resize' 'Button1 = iconify:f.iconify' 'Button1 = maximize:f.maximize' 'Button1 = delete:f.delete' '"GudaoUI Menu"' 'f.exec "xterm" xterm -geometry 80x24+50+50 -bg black -fg green' 'f.exec "xclock" xclock' 'f.exec "xload" xload' 'f.nop' 'f.delete' 'f.destroy' 'f.nop' 'f.quit' 'f.restart' 'f.nop' 'f.reshow' 'f.focus' 'f.nop' 'f.iconify' 'f.deiconify' 'f.nop' 'f.raise' 'f.lower' 'f.nop' 'f.move' 'f.resize' 'f.nop' 'f.refresh' 'f.totop' 'f.tobottom' 'f.totop' 'f.tobottom' > "$R/root/.twmrc"
+          chmod 644 "$R/root/.twmrc"
+          
           echo "Desktop: $(du -sh "$R" | cut -f1)"
 
       - name: Create squashfs
@@ -687,8 +695,11 @@ jobs:
             fluxbox)
               printf '%s\n' 'menuentry ">>> GudaoUI + Fluxbox <<<" {' '  linux /boot/vmlinuz quiet desktop=fluxbox' '  initrd /boot/initramfs.cpio.gz' '}' 'menuentry "GudaoUI (Console)" {' '  linux /boot/vmlinuz quiet desktop=console' '  initrd /boot/initramfs.cpio.gz' '}' >> "$WS/iso/boot/grub/grub.cfg"
               ;;
+            twm)
+              printf '%s\n' 'menuentry ">>> GudaoUI + TWM <<<" {' '  linux /boot/vmlinuz quiet desktop=twm' '  initrd /boot/initramfs.cpio.gz' '}' 'menuentry "GudaoUI (Console)" {' '  linux /boot/vmlinuz quiet desktop=console' '  initrd /boot/initramfs.cpio.gz' '}' >> "$WS/iso/boot/grub/grub.cfg"
+              ;;
             both)
-              printf '%s\n' 'menuentry ">>> GudaoUI + IceWM <<<" {' '  linux /boot/vmlinuz quiet desktop=icewm' '  initrd /boot/initramfs.cpio.gz' '}' 'menuentry ">>> GudaoUI + Fluxbox <<<" {' '  linux /boot/vmlinuz quiet desktop=fluxbox' '  initrd /boot/initramfs.cpio.gz' '}' 'menuentry "GudaoUI (Console)" {' '  linux /boot/vmlinuz quiet desktop=console' '  initrd /boot/initramfs.cpio.gz' '}' >> "$WS/iso/boot/grub/grub.cfg"
+              printf '%s\n' 'menuentry ">>> GudaoUI + TWM <<<" {' '  linux /boot/vmlinuz quiet desktop=twm' '  initrd /boot/initramfs.cpio.gz' '}' 'menuentry ">>> GudaoUI + IceWM <<<" {' '  linux /boot/vmlinuz quiet desktop=icewm' '  initrd /boot/initramfs.cpio.gz' '}' 'menuentry ">>> GudaoUI + Fluxbox <<<" {' '  linux /boot/vmlinuz quiet desktop=fluxbox' '  initrd /boot/initramfs.cpio.gz' '}' 'menuentry "GudaoUI (Console)" {' '  linux /boot/vmlinuz quiet desktop=console' '  initrd /boot/initramfs.cpio.gz' '}' >> "$WS/iso/boot/grub/grub.cfg"
               ;;
           esac
 
