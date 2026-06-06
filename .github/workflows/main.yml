@@ -565,15 +565,36 @@ jobs:
           ls -la "$R/usr/bin/Xorg" 2>/dev/null || echo "Xorg binary not found"
           ls -la "$R/usr/lib/xorg/" 2>/dev/null || echo "Xorg directory not found"
           file "$R/usr/bin/Xorg" 2>/dev/null || echo "Xorg file info failed"
+          echo "=== Checking Xorg wrapper content ==="
+          cat "$R/usr/bin/Xorg" 2>/dev/null | head -20 || echo "Cannot read Xorg wrapper"
+          
+          echo "=== Searching for real Xorg binary ==="
+          XORG_BIN=""
+          for path in "$R/usr/lib/xorg/Xorg" "$R/usr/lib/x86_64-linux-gnu/xorg/Xorg" "$R/usr/bin/Xorg.real" "$R/usr/lib/xserver-xorg-core/Xorg"; do
+            if [ -x "$path" ]; then
+              echo "Found real Xorg at: $path"
+              XORG_BIN="$path"
+              break
+            fi
+          done
+          
+          if [ -z "$XORG_BIN" ]; then
+            echo "WARNING: Searching for Xorg..."
+            find "$R/usr" -name "Xorg" -type f 2>/dev/null | head -10
+          fi
 
           printf '%s\n' '/lib/x86_64-linux-gnu' '/usr/lib/x86_64-linux-gnu' '/lib64' '/usr/lib64' > "$R/etc/ld.so.conf"
           chmod 644 "$R/etc/ld.so.conf"
           [ -x "$R/usr/sbin/ldconfig" ] && sudo chroot "$R" /usr/sbin/ldconfig 2>/dev/null || true
 
-          if [ ! -e "$R/usr/lib/xorg/Xorg" ] && [ -x "$R/usr/bin/Xorg" ]; then
-            echo "Creating symlink: /usr/lib/xorg/Xorg -> /usr/bin/Xorg"
-            mkdir -p "$R/usr/lib/xorg"
-            ln -sf /usr/bin/Xorg "$R/usr/lib/xorg/Xorg"
+          if [ ! -e "$R/usr/lib/xorg/Xorg" ]; then
+            if [ -n "$XORG_BIN" ]; then
+              echo "Creating symlink: /usr/lib/xorg/Xorg -> $XORG_BIN"
+              mkdir -p "$R/usr/lib/xorg"
+              ln -sf "$XORG_BIN" "$R/usr/lib/xorg/Xorg"
+            elif [ -x "$R/usr/bin/Xorg" ]; then
+              echo "WARNING: /usr/bin/Xorg exists but it's likely a wrapper, no real Xorg found"
+            fi
           fi
 
           mkdir -p "$R/etc/X11/xinit" "$R/root"
