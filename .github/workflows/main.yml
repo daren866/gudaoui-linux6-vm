@@ -381,8 +381,8 @@ jobs:
           cd "$WS"
           cp -a "$WS/python-root/"* "$R/"
 
-          [ -f "$WS/linux-6.18/modules.tar.gz" ] \
-            && tar -xzf "$WS/linux-6.18/modules.tar.gz" -C "$R/"
+          [ -f "$WS/linux-debian/modules.tar.gz" ] \
+            && tar -xzf "$WS/linux-debian/modules.tar.gz" -C "$R/"
 
           [ -f "$R/usr/local/bin/micropython" ] || {
             echo "ERROR: micropython missing"; exit 1; }
@@ -720,7 +720,7 @@ jobs:
         run: |
           WS="$GITHUB_WORKSPACE"
           mkdir -p "$WS/iso/boot/grub"
-          cp "$WS/linux-6.18/arch/x86/boot/bzImage" "$WS/iso/boot/vmlinuz"
+          cp "$WS/linux-debian/arch/x86/boot/bzImage" "$WS/iso/boot/vmlinuz"
           cp "$WS/initramfs.cpio.gz" "$WS/iso/boot/"
           cp "$WS/rootfs.squashfs" "$WS/iso/boot/"
 
