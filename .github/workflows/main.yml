@@ -8,7 +8,7 @@ on:
       desktop:
         description: 'Desktop environment (none/icewm/fluxbox/both)'
         required: false
-        default: 'none'
+        default: 'fluxbox'
         type: choice
         options:
           - none
@@ -21,7 +21,7 @@ permissions:
   actions: read
 
 env:
-  DESKTOP: ${{ github.event.inputs.desktop || 'none' }}
+  DESKTOP: ${{ github.event.inputs.desktop || 'fluxbox' }}
 
 jobs:
   build:
@@ -143,11 +143,9 @@ jobs:
             make defconfig
           fi
           echo "Applying VM optimizations (drivers compiled as modules)..."
-          # Base VirtIO support
           scripts/config --enable VIRTIO
           scripts/config --enable VIRTIO_PCI
           scripts/config --enable VIRTIO_BLK
-          # Network drivers as modules
           scripts/config --module VIRTIO_NET
           scripts/config --module VMXNET3
           scripts/config --module E1000
@@ -156,26 +154,21 @@ jobs:
           scripts/config --module 8139TOO
           scripts/config --module E100
           scripts/config --module NE2K_PCI
-          # Critical fix: compile failover as module to avoid duplicate symbols
           scripts/config --module FAILOVER
           scripts/config --module NET_FAILOVER
-          # Network auto-configuration kernel options
           scripts/config --enable PACKET
           scripts/config --enable UNIX
           scripts/config --enable INET
           scripts/config --enable IP_PNP
           scripts/config --enable IP_PNP_DHCP
-          # Enable network device support
           scripts/config --enable NETDEVICES
           scripts/config --enable NET_CORE
           scripts/config --enable NET_VENDOR_INTEL
           scripts/config --enable NET_VENDOR_VIA
           scripts/config --enable NET_VENDOR_REALTEK
-          # Disable unnecessary features
           scripts/config --disable SOUND
           scripts/config --disable USB_SUPPORT
           scripts/config --disable WLAN
-          # Power management
           scripts/config --enable POWER_SUPPLY
           scripts/config --enable SUSPEND
           scripts/config --enable HIBERNATION
@@ -190,19 +183,15 @@ jobs:
         run: |
           cd linux-6.18
           echo "Force-setting relevant options to module..."
-          # Directly patch .config to ensure these are set to m
           sed -i 's/^CONFIG_FAILOVER=.*/CONFIG_FAILOVER=m/' .config
           sed -i 's/^CONFIG_NET_FAILOVER=.*/CONFIG_NET_FAILOVER=m/' .config
           sed -i 's/^CONFIG_VIRTIO_NET=.*/CONFIG_VIRTIO_NET=m/' .config
           sed -i 's/^CONFIG_VMXNET3=.*/CONFIG_VMXNET3=m/' .config
-          # Add options if they do not exist (were commented out)
           grep -q "^CONFIG_FAILOVER=" .config || echo "CONFIG_FAILOVER=m" >> .config
           grep -q "^CONFIG_NET_FAILOVER=" .config || echo "CONFIG_NET_FAILOVER=m" >> .config
           grep -q "^CONFIG_VIRTIO_NET=" .config || echo "CONFIG_VIRTIO_NET=m" >> .config
           grep -q "^CONFIG_VMXNET3=" .config || echo "CONFIG_VMXNET3=m" >> .config
-          # Regenerate dependencies
           make olddefconfig
-          # Verify
           echo "=== Verifying key options ==="
           grep -E "CONFIG_(FAILOVER|NET_FAILOVER|VIRTIO_NET|VMXNET3)=" .config
 
@@ -280,9 +269,7 @@ jobs:
           sed -i 's/# CONFIG_FEATURE_PS_LONG is not set/CONFIG_FEATURE_PS_LONG=y/' .config
           sed -i 's/# CONFIG_FEATURE_TOP_CPU_USAGE_PERCENTAGE is not set/CONFIG_FEATURE_TOP_CPU_USAGE_PERCENTAGE=y/' .config
           sed -i 's/# CONFIG_FEATURE_SHUTDOWN_LOGIN is not set/CONFIG_FEATURE_SHUTDOWN_LOGIN=y/' .config
-          # Enable udhcpc
           sed -i 's/# CONFIG_UDHCPC is not set/CONFIG_UDHCPC=y/' .config
-          # Enable networking tools: ifconfig, route, ip
           sed -i 's/# CONFIG_IFCONFIG is not set/CONFIG_IFCONFIG=y/' .config
           sed -i 's/# CONFIG_ROUTE is not set/CONFIG_ROUTE=y/' .config
           sed -i 's/# CONFIG_IP is not set/CONFIG_IP=y/' .config
@@ -381,13 +368,14 @@ jobs:
 
       - name: Create rootfs (to be squashfs)
         run: |
+          WS="$GITHUB_WORKSPACE"
           echo "Creating rootfs directory (will be used for squashfs)..."
-          mkdir -p rootfs/{bin,sbin,usr/bin,usr/sbin,usr/local/bin,etc,proc,sys,dev,lib,lib64,tmp,var,run,root,home,usr/share/udhcpc,dev/shm}
-          cp -a busybox-1.36.1/_install/* rootfs/
-          cp -a python-root/* rootfs/
+          mkdir -p "$WS"/rootfs/{bin,sbin,usr/bin,usr/sbin,usr/local/bin,etc,proc,sys,dev,lib,lib64,tmp,var,run,root,home,usr/share/udhcpc,dev/shm}
+          cp -a "$WS"/busybox-1.36.1/_install/* "$WS/rootfs/"
+          cp -a "$WS"/python-root/* "$WS/rootfs/"
 
           # Create udhcpc default script
-          cat > rootfs/usr/share/udhcpc/default.script << 'EOF'
+          cat > "$WS/rootfs/usr/share/udhcpc/default.script" << 'EOF'
           #!/bin/sh
           # udhcpc default script - configure network interface
           INTERFACE="$1"
@@ -429,41 +417,41 @@ jobs:
           esac
           exit 0
           EOF
-          chmod +x rootfs/usr/share/udhcpc/default.script
+          chmod +x "$WS/rootfs/usr/share/udhcpc/default.script"
 
           # Extract kernel modules
-          if [ -f linux-6.18/modules.tar.gz ]; then
+          if [ -f "$WS/linux-6.18/modules.tar.gz" ]; then
             echo "Extracting kernel modules into rootfs..."
-            tar -xzf linux-6.18/modules.tar.gz -C rootfs/
+            tar -xzf "$WS/linux-6.18/modules.tar.gz" -C "$WS/rootfs/"
           else
             echo "WARNING: Kernel modules archive not found, network drivers may be missing"
           fi
 
-          if [ ! -f "rootfs/usr/local/bin/micropython" ]; then
+          if [ ! -f "$WS/rootfs/usr/local/bin/micropython" ]; then
             echo "ERROR: MicroPython binary not found in rootfs!"
             exit 1
           fi
-          echo "MicroPython binary found in rootfs: $(file rootfs/usr/local/bin/micropython)"
-          chmod 555 rootfs/usr/local/bin/micropython
-          cd rootfs/usr/local/bin
-          if [ -f "micropython" ] && [ ! -L "python" ]; then
+          echo "MicroPython binary found: $(file "$WS/rootfs/usr/local/bin/micropython")"
+          chmod 555 "$WS/rootfs/usr/local/bin/micropython"
+          if [ -f "$WS/rootfs/usr/local/bin/micropython" ] && [ ! -L "$WS/rootfs/usr/local/bin/python" ]; then
+            cd "$WS/rootfs/usr/local/bin"
             ln -sf micropython python
             ln -sf micropython python3
+            cd "$WS"
           fi
-          cd ../../../..
-          mkdir -p rootfs/etc/profile.d
+          mkdir -p "$WS/rootfs/etc/profile.d"
           printf '%s\n' 'export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin' \
-            > rootfs/etc/profile.d/python.sh
-          chmod +x rootfs/etc/profile.d/python.sh
-          sudo mknod -m 666 rootfs/dev/null c 1 3 || true
-          sudo mknod -m 644 rootfs/dev/console c 5 1 || true
-          sudo mknod -m 660 rootfs/dev/tty1 c 4 1 || true
-          sudo mknod -m 660 rootfs/dev/tty2 c 4 2 || true
-          sudo mknod -m 660 rootfs/dev/tty3 c 4 3 || true
-          sudo mknod -m 660 rootfs/dev/tty4 c 4 4 || true
+            > "$WS/rootfs/etc/profile.d/python.sh"
+          chmod +x "$WS/rootfs/etc/profile.d/python.sh"
+          sudo mknod -m 666 "$WS/rootfs/dev/null" c 1 3 || true
+          sudo mknod -m 644 "$WS/rootfs/dev/console" c 5 1 || true
+          sudo mknod -m 660 "$WS/rootfs/dev/tty1" c 4 1 || true
+          sudo mknod -m 660 "$WS/rootfs/dev/tty2" c 4 2 || true
+          sudo mknod -m 660 "$WS/rootfs/dev/tty3" c 4 3 || true
+          sudo mknod -m 660 "$WS/rootfs/dev/tty4" c 4 4 || true
 
           # Create about command
-          cat > rootfs/usr/local/bin/about << 'EOF'
+          cat > "$WS/rootfs/usr/local/bin/about" << 'EOF'
           #!/bin/sh
           echo "====================="
           echo "GudaoUI Linux V1"
@@ -487,10 +475,10 @@ jobs:
               echo "MicroPython: Not available"
           fi
           EOF
-          chmod +x rootfs/usr/local/bin/about
+          chmod +x "$WS/rootfs/usr/local/bin/about"
 
           # Create calc command
-          cat > rootfs/usr/local/bin/calc << 'EOF'
+          cat > "$WS/rootfs/usr/local/bin/calc" << 'EOF'
           #!/bin/sh
           if [ $# -eq 0 ]; then
               echo "Usage: calc <expression>"
@@ -506,36 +494,36 @@ jobs:
               printf "%.2f\n" "$result"
           fi
           EOF
-          chmod +x rootfs/usr/local/bin/calc
+          chmod +x "$WS/rootfs/usr/local/bin/calc"
 
           # Create reboot command
-          cat > rootfs/usr/local/bin/reboot << 'EOF'
+          cat > "$WS/rootfs/usr/local/bin/reboot" << 'EOF'
           #!/bin/sh
           echo "System is rebooting..."
           sync
           /bin/busybox reboot -f
           EOF
-          chmod +x rootfs/usr/local/bin/reboot
+          chmod +x "$WS/rootfs/usr/local/bin/reboot"
 
           # Create poweroff command
-          cat > rootfs/usr/local/bin/poweroff << 'EOF'
+          cat > "$WS/rootfs/usr/local/bin/poweroff" << 'EOF'
           #!/bin/sh
           echo "System is powering off..."
           sync
           /bin/busybox poweroff -f
           EOF
-          chmod +x rootfs/usr/local/bin/poweroff
+          chmod +x "$WS/rootfs/usr/local/bin/poweroff"
 
-          cd rootfs/usr/bin
+          cd "$WS/rootfs/usr/bin"
           ln -sf ../local/bin/about about || true
           ln -sf ../local/bin/calc calc || true
           ln -sf ../local/bin/reboot reboot || true
           ln -sf ../local/bin/poweroff poweroff || true
           ln -sf poweroff halt || true
-          cd ../../..
+          cd "$WS"
 
           # Create init script (with desktop support and static IP fallback)
-          cat > rootfs/init << 'INITEOF'
+          cat > "$WS/rootfs/init" << 'INITEOF'
           #!/bin/sh
 
           export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin
@@ -692,37 +680,36 @@ jobs:
             exec /bin/sh
           fi
           INITEOF
-          chmod +x rootfs/init
+          chmod +x "$WS/rootfs/init"
 
-          echo "root:x:0:0:root:/root:/bin/sh" > rootfs/etc/passwd
-          echo "root:x:0:" > rootfs/etc/group
-          printf '%s\n' 'nameserver 114.114.114.114' 'nameserver 8.8.8.8' 'nameserver 223.5.5.5' > rootfs/etc/resolv.conf
-          echo "127.0.0.1 localhost gudao-ui" > rootfs/etc/hosts
+          echo "root:x:0:0:root:/root:/bin/sh" > "$WS/rootfs/etc/passwd"
+          echo "root:x:0:" > "$WS/rootfs/etc/group"
+          printf '%s\n' 'nameserver 114.114.114.114' 'nameserver 8.8.8.8' 'nameserver 223.5.5.5' > "$WS/rootfs/etc/resolv.conf"
+          echo "127.0.0.1 localhost gudao-ui" > "$WS/rootfs/etc/hosts"
           printf '%s\n' \
             'proc    /proc    proc    defaults    0 0' \
             'sysfs   /sys     sysfs   defaults    0 0' \
             'devtmpfs /dev    devtmpfs defaults  0 0' \
             'tmpfs   /tmp     tmpfs   defaults    0 0' \
             'tmpfs   /run     tmpfs   defaults    0 0' \
-            'tmpfs   /dev/shm tmpfs   defaults    0 0' > rootfs/etc/fstab
+            'tmpfs   /dev/shm tmpfs   defaults    0 0' > "$WS/rootfs/etc/fstab"
           printf '%s\n' \
             'export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin' \
             'export TERM=linux' \
             'export PS1='\''\u@\h:\w\$ '\' \
             'alias ll='\''ls -la'\' \
-            'alias python='\''micropython'\' > rootfs/etc/profile
-          echo "rootfs ready, size: $(du -sh rootfs | cut -f1)"
+            'alias python='\''micropython'\' > "$WS/rootfs/etc/profile"
+          echo "rootfs ready, size: $(du -sh "$WS/rootfs" | cut -f1)"
 
       - name: Download X11 and desktop packages
         if: env.DESKTOP != 'none'
         run: |
+          WS="$GITHUB_WORKSPACE"
           echo "Downloading X11 and desktop environment packages (desktop=${{ env.DESKTOP }})..."
           sudo apt-get update
 
-          # Core X11 packages
           PACKAGES="xserver-xorg-core xserver-xorg xinit xterm x11-utils"
-          PACKAGES="$PACKAGES xserver-xorg-input-libinput"
-          PACKAGES="$PACKAGES xfonts-base"
+          PACKAGES="$PACKAGES xserver-xorg-input-libinput xfonts-base"
 
           case "${{ env.DESKTOP }}" in
             icewm)   PACKAGES="$PACKAGES icewm" ;;
@@ -730,83 +717,95 @@ jobs:
             both)    PACKAGES="$PACKAGES icewm fluxbox" ;;
           esac
 
-          echo "Base package list: $PACKAGES"
-          echo ""
+          echo "Base packages: $PACKAGES"
 
-          # Recursively resolve all dependencies
           mkdir -p /tmp/x11-debs
-          cd /tmp/x11-debs
 
-          ALL_DEPS=$(apt-cache depends --recurse --no-recommends --no-suggests \
+          # Resolve all dependencies recursively, filter out virtual packages
+          apt-cache depends --recurse --no-recommends --no-suggests \
             --no-conflicts --no-breaks --no-replaces --no-enhances \
-            $PACKAGES 2>/dev/null | grep -E "^\w" | sort -u)
+            $PACKAGES 2>/dev/null \
+            | grep -vE "^<|^\s" \
+            | sort -u > /tmp/pkg-list.txt
 
-          # Filter to installable packages
-          INSTALLABLE=""
-          for pkg in $ALL_DEPS; do
-            if apt-cache show "$pkg" &>/dev/null; then
-              INSTALLABLE="$INSTALLABLE $pkg"
+          TOTAL=$(wc -l < /tmp/pkg-list.txt)
+          echo "Total packages to resolve: $TOTAL"
+
+          # Download each package individually (skip failures gracefully)
+          cd /tmp/x11-debs
+          DOWNLOADED=0
+          SKIPPED=0
+          while IFS= read -r pkg; do
+            [ -z "$pkg" ] && continue
+            if apt-get download "$pkg" 2>/dev/null; then
+              DOWNLOADED=$((DOWNLOADED+1))
+            else
+              SKIPPED=$((SKIPPED+1))
             fi
-          done
+          done < /tmp/pkg-list.txt
 
-          echo "Total packages to download: $(echo $INSTALLABLE | wc -w)"
-          echo ""
-
-          # Download
-          apt-get download $INSTALLABLE 2>&1 | tail -5
-          DOWNLOAD_COUNT=$(ls *.deb 2>/dev/null | wc -l)
-          echo ""
-          echo "Download complete: $DOWNLOAD_COUNT .deb files"
-          echo "Total size: $(du -sh . | cut -f1)"
+          cd "$WS"
+          echo "Downloaded: $DOWNLOADED, Skipped: $SKIPPED"
+          echo "Total .deb files: $(ls /tmp/x11-debs/*.deb 2>/dev/null | wc -l)"
+          echo "Total size: $(du -sh /tmp/x11-debs | cut -f1)"
 
       - name: Install desktop environment into rootfs
         if: env.DESKTOP != 'none'
         run: |
           echo "Installing desktop environment into rootfs..."
-          cd /tmp/x11-debs
+
+          WS="$GITHUB_WORKSPACE"
+          DEB_DIR="/tmp/x11-debs"
+
+          # Verify downloads exist
+          DEB_COUNT=$(ls "$DEB_DIR"/*.deb 2>/dev/null | wc -l)
+          if [ "$DEB_COUNT" -eq 0 ]; then
+            echo "ERROR: No .deb packages found in $DEB_DIR!"
+            ls -la "$DEB_DIR" 2>/dev/null
+            exit 1
+          fi
+          echo "Found $DEB_COUNT .deb packages to extract"
 
           # Extract all debs into rootfs
           EXTRACTED=0
-          for deb in *.deb; do
-            if [ -f "$deb" ]; then
-              dpkg-deb -x "$deb" ../../rootfs/ 2>/dev/null && EXTRACTED=$((EXTRACTED+1))
-            fi
+          for deb in "$DEB_DIR"/*.deb; do
+            [ -f "$deb" ] || continue
+            dpkg-deb -x "$deb" "$WS/rootfs/" 2>/dev/null && EXTRACTED=$((EXTRACTED+1))
           done
           echo "Extracted $EXTRACTED deb packages"
-          cd ../../
 
           # Dynamic linker configuration (required for X11)
-          cat > rootfs/etc/ld.so.conf << 'EOF'
+          cat > "$WS/rootfs/etc/ld.so.conf" << 'EOF'
           /lib/x86_64-linux-gnu
           /usr/lib/x86_64-linux-gnu
           /lib64
           /usr/lib64
           /usr/lib/x86_64-linux-gnu/dri
           EOF
-          chmod 644 rootfs/etc/ld.so.conf
+          chmod 644 "$WS/rootfs/etc/ld.so.conf"
 
           # Run ldconfig if available
-          if [ -x rootfs/usr/sbin/ldconfig ]; then
+          if [ -x "$WS/rootfs/usr/sbin/ldconfig" ]; then
             echo "Running ldconfig..."
-            sudo chroot rootfs /usr/sbin/ldconfig 2>/dev/null || true
+            sudo chroot "$WS/rootfs" /usr/sbin/ldconfig 2>/dev/null || true
           fi
 
           # Create X11 config directories
-          mkdir -p rootfs/etc/X11/xinit
+          mkdir -p "$WS/rootfs/etc/X11/xinit"
+          mkdir -p "$WS/rootfs/root"
 
           # Create default .xinitrc
-          cat > rootfs/etc/X11/xinit/xinitrc << 'EOF'
+          cat > "$WS/rootfs/etc/X11/xinit/xinitrc" << 'EOF'
           #!/bin/sh
-          # Default xinitrc - overridden by ~/.xinitrc
           if [ -f $HOME/.xinitrc ]; then
             exec $HOME/.xinitrc
           fi
           exec xterm
           EOF
-          chmod +x rootfs/etc/X11/xinit/xinitrc
+          chmod +x "$WS/rootfs/etc/X11/xinit/xinitrc"
 
           # Create root user .xinitrc
-          cat > rootfs/root/.xinitrc << 'EOF'
+          cat > "$WS/rootfs/root/.xinitrc" << 'EOF'
           #!/bin/sh
           export XDG_SESSION_TYPE=x11
           export XDG_CURRENT_DESKTOP="GudaoUI"
@@ -825,10 +824,10 @@ jobs:
 
           wait $XPID
           EOF
-          chmod +x rootfs/root/.xinitrc
+          chmod +x "$WS/rootfs/root/.xinitrc"
 
           # Create desktop launch script
-          cat > rootfs/usr/local/bin/start-desktop << 'DESKTOPSCRIPT'
+          cat > "$WS/rootfs/usr/local/bin/start-desktop" << 'DESKTOPSCRIPT'
           #!/bin/sh
           # GudaoUI Desktop Launcher
           # Usage: start-desktop [icewm|fluxbox]
@@ -864,22 +863,20 @@ jobs:
 
           chmod +x /root/.xinitrc
 
-          # Launch X
           if [ -x /usr/bin/startx ]; then
             exec startx
           elif [ -x /usr/bin/xinit ]; then
             exec xinit -- /usr/bin/Xorg :0
           else
             echo "ERROR: No X init command found!"
-            echo "Available X binaries:"
             ls -la /usr/bin/X* /usr/bin/startx /usr/bin/xinit 2>/dev/null
             exit 1
           fi
           DESKTOPSCRIPT
-          chmod +x rootfs/usr/local/bin/start-desktop
+          chmod +x "$WS/rootfs/usr/local/bin/start-desktop"
 
           # Create desktop helper command
-          cat > rootfs/usr/local/bin/desktop << 'EOF'
+          cat > "$WS/rootfs/usr/local/bin/desktop" << 'EOF'
           #!/bin/sh
           echo "GudaoUI Desktop"
           echo ""
@@ -905,18 +902,18 @@ jobs:
             start-desktop fluxbox
           fi
           EOF
-          chmod +x rootfs/usr/local/bin/desktop
+          chmod +x "$WS/rootfs/usr/local/bin/desktop"
 
           # Write default desktop preference
           case "${{ env.DESKTOP }}" in
-            icewm)   echo "icewm" > rootfs/etc/default-desktop ;;
-            fluxbox) echo "fluxbox" > rootfs/etc/default-desktop ;;
-            both)    echo "fluxbox" > rootfs/etc/default-desktop ;;
+            icewm)   echo "icewm" > "$WS/rootfs/etc/default-desktop" ;;
+            fluxbox) echo "fluxbox" > "$WS/rootfs/etc/default-desktop" ;;
+            both)    echo "fluxbox" > "$WS/rootfs/etc/default-desktop" ;;
           esac
 
           # Fluxbox configuration
-          mkdir -p rootfs/root/.fluxbox
-          cat > rootfs/root/.fluxbox/init << 'EOF'
+          mkdir -p "$WS/rootfs/root/.fluxbox"
+          cat > "$WS/rootfs/root/.fluxbox/init" << 'EOF'
           session.screen0.toolbar.visible: true
           session.screen0.toolbar.widthPercent: 100
           session.screen0.tabs.usePixmap: false
@@ -926,28 +923,26 @@ jobs:
           session.screen0.focusNewWindows: true
           session.screen0.focusModel: ClickFocus
           EOF
-          chmod 644 rootfs/root/.fluxbox/init
+          chmod 644 "$WS/rootfs/root/.fluxbox/init"
 
-          cat > rootfs/root/.fluxbox/keys << 'EOF'
-          # Fluxbox key bindings
+          cat > "$WS/rootfs/root/.fluxbox/keys" << 'EOF'
           Mod1 F2 :ExecCommand:xterm &
           Mod1 F3 :ExecCommand:xterm &
           Mod1 F4 :Close
           Mod1 Tab :NextWindow
           Control Mod1 T :ExecCommand:xterm &
           EOF
-          chmod 644 rootfs/root/.fluxbox/keys
+          chmod 644 "$WS/rootfs/root/.fluxbox/keys"
 
-          cat > rootfs/root/.fluxbox/apps << 'EOF'
+          cat > "$WS/rootfs/root/.fluxbox/apps" << 'EOF'
           [app] (name=xterm) {geometry 100x30+50+50}
           [app] (name=xterm) {sticky}
           EOF
-          chmod 644 rootfs/root/.fluxbox/apps
+          chmod 644 "$WS/rootfs/root/.fluxbox/apps"
 
           # IceWM configuration
-          mkdir -p rootfs/root/.icewm
-          cat > rootfs/root/.icewm/preferences << 'EOF'
-          # IceWM Preferences
+          mkdir -p "$WS/rootfs/root/.icewm"
+          cat > "$WS/rootfs/root/.icewm/preferences" << 'EOF'
           TaskBarShowClock = 1
           TaskBarShowMemory = 1
           TaskBarShowCPUStatus = 1
@@ -959,42 +954,45 @@ jobs:
           ClockCommand = xclock -digital -24h -brief
           ClockFmt = %H:%M
           EOF
-          chmod 644 rootfs/root/.icewm/preferences
+          chmod 644 "$WS/rootfs/root/.icewm/preferences"
 
-          cat > rootfs/root/.icewm/theme << 'EOF'
+          cat > "$WS/rootfs/root/.icewm/theme" << 'EOF'
           Theme="default/default.theme"
           EOF
-          chmod 644 rootfs/root/.icewm/theme
+          chmod 644 "$WS/rootfs/root/.icewm/theme"
 
           echo "Desktop environment installation complete"
           echo ""
           echo "Installed desktop components:"
-          [ -f rootfs/usr/bin/icewm ] && echo "  IceWM: /usr/bin/icewm"
-          [ -f rootfs/usr/bin/fluxbox ] && echo "  Fluxbox: /usr/bin/fluxbox"
-          [ -f rootfs/usr/bin/xterm ] && echo "  xterm: /usr/bin/xterm"
-          [ -f rootfs/usr/bin/startx ] && echo "  startx: /usr/bin/startx"
-          echo "  Script: rootfs/usr/local/bin/start-desktop"
-          echo "  Script: rootfs/usr/local/bin/desktop"
-          echo "X11 libraries: $(du -sh rootfs/usr/lib/x86_64-linux-gnu/ 2>/dev/null | cut -f1 || echo 'N/A')"
-          echo "Rootfs total size: $(du -sh rootfs | cut -f1)"
+          [ -f "$WS/rootfs/usr/bin/icewm" ] && echo "  IceWM: /usr/bin/icewm"
+          [ -f "$WS/rootfs/usr/bin/fluxbox" ] && echo "  Fluxbox: /usr/bin/fluxbox"
+          [ -f "$WS/rootfs/usr/bin/xterm" ] && echo "  xterm: /usr/bin/xterm"
+          [ -f "$WS/rootfs/usr/bin/startx" ] && echo "  startx: /usr/bin/startx"
+          [ -f "$WS/rootfs/usr/bin/Xorg" ] && echo "  Xorg: /usr/bin/Xorg"
+          [ -f "$WS/rootfs/usr/local/bin/start-desktop" ] && echo "  Script: /usr/local/bin/start-desktop"
+          [ -f "$WS/rootfs/usr/local/bin/desktop" ] && echo "  Script: /usr/local/bin/desktop"
+          echo "X11 libraries: $(du -sh "$WS/rootfs/usr/lib/x86_64-linux-gnu/" 2>/dev/null | cut -f1 || echo 'N/A')"
+          echo "Rootfs total size: $(du -sh "$WS/rootfs" | cut -f1)"
 
       - name: Create squashfs from rootfs
         run: |
+          WS="$GITHUB_WORKSPACE"
           echo "Creating squashfs image..."
-          mksquashfs rootfs rootfs.squashfs -comp xz -b 1M
-          echo "Squashfs created: $(du -h rootfs.squashfs | cut -f1)"
+          mksquashfs "$WS/rootfs" "$WS/rootfs.squashfs" -comp xz -b 1M
+          echo "Squashfs created: $(du -h "$WS/rootfs.squashfs" | cut -f1)"
 
       - name: Build initramfs for overlay boot
         run: |
+          WS="$GITHUB_WORKSPACE"
           echo "Building initramfs (for squashfs and overlay mount)..."
-          mkdir -p initramfs/{bin,dev,etc,proc,root,sys,mnt/iso,mnt/root,mnt/overlay,newroot}
-          cp -a busybox-1.36.1/_install/* initramfs/
-          sudo mknod -m 600 initramfs/dev/console c 5 1 || true
-          sudo mknod -m 666 initramfs/dev/null c 1 3 || true
-          sudo mknod -m 660 initramfs/dev/tty1 c 4 1 || true
-          sudo mknod -m 660 initramfs/dev/tty2 c 4 2 || true
-          sudo mknod -m 660 initramfs/dev/tty3 c 4 3 || true
-          sudo mknod -m 660 initramfs/dev/tty4 c 4 4 || true
+          mkdir -p "$WS/initramfs"/{bin,dev,etc,proc,root,sys,mnt/iso,mnt/root,mnt/overlay,newroot}
+          cp -a "$WS/busybox-1.36.1/_install"/* "$WS/initramfs/"
+          sudo mknod -m 600 "$WS/initramfs/dev/console" c 5 1 || true
+          sudo mknod -m 666 "$WS/initramfs/dev/null" c 1 3 || true
+          sudo mknod -m 660 "$WS/initramfs/dev/tty1" c 4 1 || true
+          sudo mknod -m 660 "$WS/initramfs/dev/tty2" c 4 2 || true
+          sudo mknod -m 660 "$WS/initramfs/dev/tty3" c 4 3 || true
+          sudo mknod -m 660 "$WS/initramfs/dev/tty4" c 4 4 || true
           printf '%s\n' \
             '#!/bin/sh' \
             '' \
@@ -1026,9 +1024,7 @@ jobs:
             '' \
             'if [ ! -f /mnt/iso/boot/rootfs.squashfs ]; then' \
             '    echo "ERROR: /boot/rootfs.squashfs not found on ISO!"' \
-            '    echo "Contents of /mnt/iso:"' \
             '    ls -la /mnt/iso' \
-            '    echo "Contents of /mnt/iso/boot (if exists):"' \
             '    ls -la /mnt/iso/boot 2>/dev/null || echo "/boot directory not found"' \
             '    exec sh' \
             'fi' \
@@ -1037,9 +1033,6 @@ jobs:
             '    echo "ERROR: Failed to mount squashfs"' \
             '    exec sh' \
             '}' \
-            '' \
-            'echo "Contents of /mnt/root (squashfs):"' \
-            'ls -la /mnt/root' \
             '' \
             'mkdir -p /mnt/overlay' \
             'mount -t tmpfs tmpfs /mnt/overlay' \
@@ -1050,32 +1043,30 @@ jobs:
             '    exec sh' \
             '}' \
             '' \
-            'echo "Contents of /newroot (overlay):"' \
-            'ls -la /newroot' \
-            '' \
             'if [ ! -x /newroot/init ]; then' \
             '    echo "ERROR: /newroot/init not found or not executable!"' \
             '    exec sh' \
             'fi' \
             '' \
             'umount /proc /sys /dev 2>/dev/null' \
-            'exec switch_root /newroot /init' > initramfs/init
-          chmod +x initramfs/init
-          cd initramfs
-          find . | cpio -o -H newc | gzip > ../initramfs.cpio.gz
-          cd ..
-          echo "initramfs created: $(du -h initramfs.cpio.gz | cut -f1)"
+            'exec switch_root /newroot /init' > "$WS/initramfs/init"
+          chmod +x "$WS/initramfs/init"
+          cd "$WS/initramfs"
+          find . | cpio -o -H newc | gzip > "$WS/initramfs.cpio.gz"
+          cd "$WS"
+          echo "initramfs created: $(du -h "$WS/initramfs.cpio.gz" | cut -f1)"
 
       - name: Create bootable ISO
         run: |
+          WS="$GITHUB_WORKSPACE"
           echo "Creating bootable ISO..."
-          mkdir -p iso/boot/grub
-          cp linux-6.18/arch/x86/boot/bzImage iso/boot/vmlinuz
-          cp initramfs.cpio.gz iso/boot/initramfs.cpio.gz
-          cp rootfs.squashfs iso/boot/rootfs.squashfs
+          mkdir -p "$WS/iso/boot/grub"
+          cp "$WS/linux-6.18/arch/x86/boot/bzImage" "$WS/iso/boot/vmlinuz"
+          cp "$WS/initramfs.cpio.gz" "$WS/iso/boot/initramfs.cpio.gz"
+          cp "$WS/rootfs.squashfs" "$WS/iso/boot/rootfs.squashfs"
 
           # Generate GRUB config based on desktop mode
-          cat > iso/boot/grub/grub.cfg << GRUBCFG
+          cat > "$WS/iso/boot/grub/grub.cfg" << GRUBCFG
           set default=0
           set timeout=5
 
@@ -1086,7 +1077,7 @@ jobs:
 
           case "${{ env.DESKTOP }}" in
             none)
-              cat >> iso/boot/grub/grub.cfg << 'EOF'
+              cat >> "$WS/iso/boot/grub/grub.cfg" << 'EOF'
           menuentry "GudaoUI Linux V1 (Console)" {
             linux /boot/vmlinuz quiet
             initrd /boot/initramfs.cpio.gz
@@ -1098,7 +1089,7 @@ jobs:
           EOF
               ;;
             icewm)
-              cat >> iso/boot/grub/grub.cfg << 'EOF'
+              cat >> "$WS/iso/boot/grub/grub.cfg" << 'EOF'
           menuentry ">>> GudaoUI Linux with IceWM Desktop <<<" {
             linux /boot/vmlinuz quiet desktop=icewm
             initrd /boot/initramfs.cpio.gz
@@ -1114,7 +1105,7 @@ jobs:
           EOF
               ;;
             fluxbox)
-              cat >> iso/boot/grub/grub.cfg << 'EOF'
+              cat >> "$WS/iso/boot/grub/grub.cfg" << 'EOF'
           menuentry ">>> GudaoUI Linux with Fluxbox Desktop <<<" {
             linux /boot/vmlinuz quiet desktop=fluxbox
             initrd /boot/initramfs.cpio.gz
@@ -1130,7 +1121,7 @@ jobs:
           EOF
               ;;
             both)
-              cat >> iso/boot/grub/grub.cfg << 'EOF'
+              cat >> "$WS/iso/boot/grub/grub.cfg" << 'EOF'
           menuentry ">>> GudaoUI Linux with Fluxbox <<<" {
             linux /boot/vmlinuz quiet desktop=fluxbox
             initrd /boot/initramfs.cpio.gz
@@ -1151,9 +1142,9 @@ jobs:
               ;;
           esac
 
-          grub-mkrescue -o "$ISO_NAME" iso/
+          grub-mkrescue -o "$ISO_NAME" "$WS/iso/"
           echo "ISO created: $ISO_NAME"
-          echo "ISO size: $(du -h $ISO_NAME | cut -f1)"
+          echo "ISO size: $(du -h "$ISO_NAME" | cut -f1)"
 
       - name: Upload ISO to Artifacts
         uses: actions/upload-artifact@v4
@@ -1196,7 +1187,7 @@ jobs:
             ### Build Info
             - Build time: $(date '+%Y-%m-%d %H:%M:%S')
             - ISO size: $(du -h ${{ steps.set-release-info.outputs.iso_name }} | cut -f1)
-            - MicroPython size: ~300KB (statically linked, includes SSL)
+            - MicroPython size: ~300KB (staticly linked, includes SSL)
           files: ${{ steps.set-release-info.outputs.iso_name }}
           draft: false
           prerelease: false
