@@ -548,6 +548,8 @@ jobs:
           ls -la xinit*.deb 2>/dev/null || echo "No xinit packages found"
           ls -la xserver-xorg*.deb 2>/dev/null || echo "No xserver-xorg packages found"
           ls -la twm*.deb 2>/dev/null || echo "No twm packages found"
+          echo "=== Twm package details ==="
+          dpkg-deb -I twm*.deb 2>/dev/null || echo "Cannot inspect twm deb"
 
       - name: Install desktop into rootfs
         if: env.DESKTOP != 'none'
@@ -563,6 +565,10 @@ jobs:
             dpkg-deb -x "$f" "$R/" 2>/dev/null && EX=$((EX+1))
           done
           echo "Extracted $EX debs"
+          
+          echo "=== Checking TWM installation ==="
+          ls -la "$R/usr/bin/twm" 2>/dev/null || echo "TWM binary NOT FOUND in rootfs"
+          which twm 2>/dev/null && echo "TWM found on host" || echo "TWM NOT found on host"
 
           echo "=== Checking Xorg installation ==="
           ls -la "$R/usr/bin/Xorg" 2>/dev/null || echo "Xorg binary not found"
