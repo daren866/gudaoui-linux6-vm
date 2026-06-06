@@ -398,6 +398,7 @@ jobs:
             'export TERM=linux' \
             "trap '' HUP INT QUIT TERM TSTP" \
             '' \
+            '/bin/busybox --install -s' \
             '/bin/busybox mount -t proc none /proc' \
             '/bin/busybox mount -t sysfs none /sys' \
             '/bin/busybox mount -t devtmpfs none /dev' \
@@ -406,7 +407,6 @@ jobs:
             '/bin/busybox mkdir -p /dev/shm' \
             '/bin/busybox mount -t tmpfs tmpfs /dev/shm' \
             '/bin/busybox mkdir -p /dev/shm /run/lock' \
-            '/bin/busybox --install -s' \
             '/bin/busybox echo "gudao-ui" > /proc/sys/kernel/hostname 2>/dev/null || true' \
             'sleep 2' \
             '' \
