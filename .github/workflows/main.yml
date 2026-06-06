@@ -524,7 +524,7 @@ jobs:
         if: env.DESKTOP != 'none'
         run: |
           sudo apt-get update
-          PKGS="xserver-xorg-core xserver-xorg xinit xterm x11-utils xfonts-base xserver-xorg-input-libinput x11-apps xclock xload"
+          PKGS="xserver-xorg-core xserver-xorg xinit xterm x11-utils xfonts-base xserver-xorg-input-libinput x11-apps xclock xload libx11-6 libc6 libxext6 libxmu6 libxt6 libsm6 libice6"
           case "${{ env.DESKTOP }}" in
             icewm)   PKGS="$PKGS icewm" ;;
             fluxbox) PKGS="$PKGS fluxbox" ;;
