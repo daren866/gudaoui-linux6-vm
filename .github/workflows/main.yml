@@ -151,6 +151,13 @@ jobs:
           scripts/config --disable DEBUG_INFO_REDUCED
           scripts/config --disable DEBUG_INFO_SPLIT
           scripts/config --disable DEBUG_KERNEL
+          scripts/config --disable DEBUG_INFO_NONE
+          scripts/config --disable DEBUG_INFO_COMPRESSED
+          scripts/config --disable FRAME_POINTER
+          scripts/config --disable KALLSYMS
+          scripts/config --disable KALLSYMS_ALL
+          scripts/config --disable STACK_VALIDATION
+          scripts/config --disable GDB_SCRIPTS
           make olddefconfig
 
       - name: Force modules
