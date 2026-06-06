@@ -130,6 +130,8 @@ jobs:
           for o in SOUND USB_SUPPORT WLAN; do
             scripts/config --disable "$o"
           done
+          # 禁用gendwarfksyms（避免dwarf.h依赖问题）
+          scripts/config --disable DEBUG_INFO_BTF_MODULES
           make olddefconfig
 
       - name: Force modules
