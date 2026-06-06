@@ -551,6 +551,11 @@ jobs:
         if: env.DESKTOP == 'twm' || env.DESKTOP == 'both'
         run: |
           echo "=== Building TWM from source ==="
+          echo "Adding deb-src to sources.list..."
+          sudo bash -c 'echo "deb-src http://azure.archive.ubuntu.com/ubuntu/ noble main" >> /etc/apt/sources.list'
+          sudo bash -c 'echo "deb-src http://azure.archive.ubuntu.com/ubuntu/ noble-updates main" >> /etc/apt/sources.list'
+          sudo bash -c 'echo "deb-src http://azure.archive.ubuntu.com/ubuntu/ noble-security main" >> /etc/apt/sources.list'
+          sudo apt-get update
           sudo apt-get install -y libx11-dev libxext-dev libxmu-dev libxt-dev libsm-dev autoconf automake libtool xutils-dev pkg-config
           sudo apt-get build-dep -y twm
           git clone https://gitlab.freedesktop.org/xorg/app/twm.git /tmp/twm
