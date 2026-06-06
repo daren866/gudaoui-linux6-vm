@@ -16,6 +16,14 @@ on:
           - icewm
           - fluxbox
           - both
+      rebuild:
+        description: "Force rebuild (bypass cache)"
+        required: false
+        default: "no"
+        type: choice
+        options:
+          - no
+          - yes
 
 permissions:
   contents: write
@@ -68,10 +76,12 @@ jobs:
           path: busybox-1.36.1
           key: >-
             busybox-1.36.1-${{
-              hashFiles('busybox-config.conf')
+              github.event.inputs.rebuild || 'normal'
+            }}-${{
+              hashFiles('.github/workflows/main.yml', 'busybox-config.conf')
             }}
           restore-keys: |
-            busybox-1.36.1-
+            busybox-1.36.1-normal-
 
       - name: Install dependencies
         run: |
