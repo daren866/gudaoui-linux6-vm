@@ -75,13 +75,13 @@ jobs:
         with:
           path: busybox-1.36.1
           key: >-
-            busybox-1.36.1-${{
+            busybox-1.36.1-v2-${{
               github.event.inputs.rebuild || 'normal'
             }}-${{
               hashFiles('.github/workflows/main.yml', 'busybox-config.conf')
             }}
           restore-keys: |
-            busybox-1.36.1-normal-
+            busybox-1.36.1-v2-normal-
 
       - name: Install dependencies
         run: |
@@ -266,14 +266,20 @@ jobs:
         run: |
           cd busybox-1.36.1
           HIT="${{ steps.busybox-cache.outputs.cache-hit }}"
-          if [ -f busybox ] && [ "$HIT" = "true" ]; then
-            echo "Using cached"
+          FORCE_REBUILD="${{ github.event.inputs.rebuild }}"
+          if [ -f busybox ] && [ "$HIT" = "true" ] && [ "$FORCE_REBUILD" != "yes" ]; then
+            echo "Using cached busybox"
           else
+            echo "Rebuilding busybox..."
+            make clean
             make -j"$(nproc)"
             make install
           fi
           ls -lh busybox
           file busybox
+          echo "=== Verifying busybox applets ==="
+          ./busybox --list | grep -E "^(cut|tr|grep|sed|awk|head|tail|ip|udhcpc)$" || echo "Some applets missing!"
+          ./busybox --list-full | head -20
 
       - name: Build MicroPython
         run: |
