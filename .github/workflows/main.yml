@@ -27,15 +27,13 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     outputs:
       release_title: >-
         ${{ steps.set-release-info.outputs.release_title }}
       release_tag: >-
         ${{ steps.set-release-info.outputs.release_tag }}
-
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set release info
@@ -43,14 +41,14 @@ jobs:
         run: |
           TS=$(date +%s)
           N=$((TS * 9178666))
-          TITLE="GudaoUI Linux 6.18 VM-${N}"
-          NAME="gudaoui-linux6-vm-${TS}.iso"
-          echo "release_title=$TITLE" >> "$GITHUB_OUTPUT"
+          T="GudaoUI Linux 6.18 VM-${N}"
+          I="gudaoui-linux6-vm-${TS}.iso"
+          echo "release_title=$T" >> "$GITHUB_OUTPUT"
           echo "release_tag=gudaoui-linux6-vm-${TS}" \
             >> "$GITHUB_OUTPUT"
-          echo "iso_name=$NAME" >> "$GITHUB_OUTPUT"
-          echo "RELEASE_TITLE=$TITLE" >> "$GITHUB_ENV"
-          echo "ISO_NAME=$NAME" >> "$GITHUB_ENV"
+          echo "iso_name=$I" >> "$GITHUB_OUTPUT"
+          echo "RELEASE_TITLE=$T" >> "$GITHUB_ENV"
+          echo "ISO_NAME=$I" >> "$GITHUB_ENV"
 
       - name: Cache kernel build
         uses: actions/cache@v4
@@ -58,7 +56,9 @@ jobs:
         with:
           path: linux-6.18
           key: >-
-            kernel-6.18-${{ hashFiles('6.18.x-x86_64-build.conf') }}
+            kernel-6.18-${{
+              hashFiles('6.18.x-x86_64-build.conf')
+            }}
           restore-keys: |
             kernel-6.18-
 
@@ -68,25 +68,23 @@ jobs:
         with:
           path: busybox-1.36.1
           key: >-
-            busybox-1.36.1-${{ hashFiles('busybox-config.conf') }}
+            busybox-1.36.1-${{
+              hashFiles('busybox-config.conf')
+            }}
           restore-keys: |
             busybox-1.36.1-
 
-      - name: Check cache status
+      - name: Check cache
         run: |
-          echo "## Cache Status" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Cache" >> "$GITHUB_STEP_SUMMARY"
           KH="${{ steps.kernel-cache.outputs.cache-hit }}"
           BH="${{ steps.busybox-cache.outputs.cache-hit }}"
-          if [ "$KH" = "true" ]; then
-            echo "**Kernel HIT**" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "Kernel MISS" >> "$GITHUB_STEP_SUMMARY"
-          fi
-          if [ "$BH" = "true" ]; then
-            echo "**BusyBox HIT**" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "BusyBox MISS" >> "$GITHUB_STEP_SUMMARY"
-          fi
+          [ "$KH" = "true" ] \
+            && echo "**Kernel HIT**" >> "$GITHUB_STEP_SUMMARY" \
+            || echo "Kernel MISS" >> "$GITHUB_STEP_SUMMARY"
+          [ "$BH" = "true" ] \
+            && echo "**BusyBox HIT**" >> "$GITHUB_STEP_SUMMARY" \
+            || echo "BusyBox MISS" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Install dependencies
         run: |
@@ -95,10 +93,9 @@ jobs:
             build-essential libncurses-dev bison flex \
             libssl-dev libelf-dev bc wget cpio xorriso \
             grub-pc-bin grub-common mtools dosfstools \
-            git pkg-config squashfs-tools \
-            libmbedtls-dev
+            git pkg-config squashfs-tools libmbedtls-dev
 
-      - name: Download kernel source
+      - name: Download kernel
         if: steps.kernel-cache.outputs.cache-hit != 'true'
         run: |
           wget -q https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.tar.xz
@@ -113,50 +110,38 @@ jobs:
           [ -f .config.original ] \
             && cp .config.original .config \
             || make defconfig
-          scripts/config --enable VIRTIO
-          scripts/config --enable VIRTIO_PCI
-          scripts/config --enable VIRTIO_BLK
-          scripts/config --module VIRTIO_NET
-          scripts/config --module VMXNET3
-          scripts/config --module E1000
-          scripts/config --module PCNET32
-          scripts/config --module 8139CP
-          scripts/config --module 8139TOO
-          scripts/config --module E100
-          scripts/config --module NE2K_PCI
-          scripts/config --module FAILOVER
-          scripts/config --module NET_FAILOVER
-          scripts/config --enable PACKET
-          scripts/config --enable UNIX
-          scripts/config --enable INET
-          scripts/config --enable IP_PNP
-          scripts/config --enable IP_PNP_DHCP
-          scripts/config --enable NETDEVICES
-          scripts/config --enable NET_CORE
-          scripts/config --disable SOUND
-          scripts/config --disable USB_SUPPORT
-          scripts/config --disable WLAN
-          scripts/config --enable ACPI
-          scripts/config --enable ACPI_BUTTON
-          make olddefconfig
-
-      - name: Force module config
-        run: |
-          cd linux-6.18
-          for opt in FAILOVER NET_FAILOVER \
-            VIRTIO_NET VMXNET3; do
-            sed -i \
-              "s/^CONFIG_${opt}=.*/CONFIG_${opt}=m/" \
-              .config
-            grep -q "^CONFIG_${opt}=" .config \
-              || echo "CONFIG_${opt}=m" >> .config
+          for o in VIRTIO VIRTIO_PCI VIRTIO_BLK; do
+            scripts/config --enable "$o"
+          done
+          for o in VIRTIO_NET VMXNET3 E1000 PCNET32 \
+            8139CP 8139TOO E100 NE2K_PCI \
+            FAILOVER NET_FAILOVER; do
+            scripts/config --module "$o"
+          done
+          for o in PACKET UNIX INET IP_PNP IP_PNP_DHCP \
+            NETDEVICES NET_CORE \
+            ACPI ACPI_BUTTON; do
+            scripts/config --enable "$o"
+          done
+          for o in SOUND USB_SUPPORT WLAN; do
+            scripts/config --disable "$o"
           done
           make olddefconfig
-          grep -E \
-            "CONFIG_(FAILOVER|NET_FAILOVER|VIRTIO_NET|VMXNET3)=" \
-            .config
 
-      - name: Build kernel image
+      - name: Force modules
+        run: |
+          cd linux-6.18
+          for o in FAILOVER NET_FAILOVER \
+            VIRTIO_NET VMXNET3; do
+            sed -i \
+              "s/^CONFIG_${o}=.*/CONFIG_${o}=m/" \
+              .config
+            grep -q "^CONFIG_${o}=" .config \
+              || echo "CONFIG_${o}=m" >> .config
+          done
+          make olddefconfig
+
+      - name: Build kernel
         run: |
           cd linux-6.18
           HIT="${{ steps.kernel-cache.outputs.cache-hit }}"
@@ -166,12 +151,11 @@ jobs:
           else
             S=$(date +%s)
             make -j"$(nproc)" bzImage
-            E=$(date +%s)
-            echo "Built in $(( (E-S)/60 )) min"
+            echo "Built in $(( ($(date +%s)-S)/60 )) min"
           fi
           ls -lh arch/x86/boot/bzImage
 
-      - name: Build kernel modules
+      - name: Build modules
         run: |
           cd linux-6.18
           if [ -f modules.tar.gz ]; then
@@ -187,14 +171,13 @@ jobs:
             KVER=$(ls ../modules-install/lib/modules/ \
               | head -1)
             cp modules.builtin \
-              ../modules-install/lib/modules/"$KVER"/ \
+              "../modules-install/lib/modules/${KVER}/" \
               2>/dev/null || true
             cd ../modules-install
             tar -czf ../linux-6.18/modules.tar.gz lib
             cd ../linux-6.18
             rm -rf ../modules-install
-            E=$(date +%s)
-            echo "Built in $(( (E-S)/60 )) min"
+            echo "Built in $(( ($(date +%s)-S)/60 )) min"
           fi
           du -h modules.tar.gz
 
@@ -208,33 +191,30 @@ jobs:
         run: |
           cd busybox-1.36.1
           make defconfig
-          sed -i 's/# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
-          sed -i 's/# CONFIG_ASH is not set/CONFIG_ASH=y/' .config
-          sed -i 's/# CONFIG_SH is not set/CONFIG_SH=y/' .config
-          sed -i 's/# CONFIG_ASH_MATH_SUPPORT is not set/CONFIG_ASH_MATH_SUPPORT=y/' .config
-          sed -i 's/# CONFIG_ASH_MATH_SUPPORT_64 is not set/CONFIG_ASH_MATH_SUPPORT_64=y/' .config
-          sed -i 's/# CONFIG_REBOOT is not set/CONFIG_REBOOT=y/' .config
-          sed -i 's/# CONFIG_HALT is not set/CONFIG_HALT=y/' .config
-          sed -i 's/# CONFIG_POWEROFF is not set/CONFIG_POWEROFF=y/' .config
-          sed -i 's/# CONFIG_UDHCPC is not set/CONFIG_UDHCPC=y/' .config
-          sed -i 's/# CONFIG_IFCONFIG is not set/CONFIG_IFCONFIG=y/' .config
-          sed -i 's/# CONFIG_ROUTE is not set/CONFIG_ROUTE=y/' .config
-          sed -i 's/# CONFIG_IP is not set/CONFIG_IP=y/' .config
-
-          # Enable ALL required applets via grep-append
+          for s in \
+            's/# CONFIG_STATIC is not set/CONFIG_STATIC=y/' \
+            's/# CONFIG_ASH is not set/CONFIG_ASH=y/' \
+            's/# CONFIG_SH is not set/CONFIG_SH=y/' \
+            's/# CONFIG_ASH_MATH_SUPPORT is not set/CONFIG_ASH_MATH_SUPPORT=y/' \
+            's/# CONFIG_ASH_MATH_SUPPORT_64 is not set/CONFIG_ASH_MATH_SUPPORT_64=y/' \
+            's/# CONFIG_REBOOT is not set/CONFIG_REBOOT=y/' \
+            's/# CONFIG_HALT is not set/CONFIG_HALT=y/' \
+            's/# CONFIG_POWEROFF is not set/CONFIG_POWEROFF=y/' \
+            's/# CONFIG_UDHCPC is not set/CONFIG_UDHCPC=y/' \
+            's/# CONFIG_IFCONFIG is not set/CONFIG_IFCONFIG=y/' \
+            's/# CONFIG_ROUTE is not set/CONFIG_ROUTE=y/' \
+            's/# CONFIG_IP is not set/CONFIG_IP=y/'; do
+            sed -i "$s" .config
+          done
           for A in \
             CUT HEAD TAIL TR SORT UNIQ WC SEQ \
             UNDO PASTE EXPR \
             FEATURE_EXPR_MATH_SUPPORT_64 \
             MKTEMP READLINK REALPATH \
-            CHMOD CHOWN CHROOT \
-            BASENAME DIRNAME \
-            ENV SET PRINTENV \
-            TEST XARGS STTY \
-            WHICH WHOAMI ID GROUPS \
-            SHUF TIMEOUT DIFF \
-            GREP SED AWK \
-            HEXDUMP HD UNHEX STRINGS \
+            CHMOD CHOWN CHROOT BASENAME DIRNAME \
+            ENV SET PRINTENV TEST XARGS STTY \
+            WHICH WHOAMI ID GROUPS SHUF TIMEOUT \
+            DIFF GREP SED AWK HEXDUMP HD UNHEX STRINGS \
             FEATURE_GAWK_EXTENDED \
             FEATURE_XARGS_SUPPORT_QUOTES \
             FEATURE_TEST_64 \
@@ -242,29 +222,21 @@ jobs:
             KILL KILLALL PGREP PIDOF RENICE \
             FEATURE_PS_LONG \
             FEATURE_TOP_CPU_USAGE_PERCENTAGE \
-            FEATURE_SHUTDOWN_LOGIN \
-            OD; do
+            FEATURE_SHUTDOWN_LOGIN OD; do
             grep -q "^CONFIG_${A}=y" .config \
               || echo "CONFIG_${A}=y" >> .config
           done
-
           sed -i \
             's/^CONFIG_TC=y/# CONFIG_TC is not set/' \
             .config 2>/dev/null || true
-
           make oldconfig
-
-          echo "=== Verifying ==="
+          echo "=== Verify ==="
           FAIL=0
-          for A in \
-            CUT HEAD TAIL TR EXPR TTY \
-            GREP SED AWK KILL PGREP MKTEMP OD; do
-            if grep -q "^CONFIG_${A}=y" .config; then
-              echo "  OK: $A"
-            else
-              echo "  MISSING: $A"
-              FAIL=1
-            fi
+          for A in CUT HEAD TAIL TR EXPR TTY GREP \
+            SED AWK KILL PGREP MKTEMP OD; do
+            grep -q "^CONFIG_${A}=y" .config \
+              && echo "  OK: $A" \
+              || { echo "  MISS: $A"; FAIL=1; }
           done
           [ "$FAIL" -eq 1 ] && exit 1
 
@@ -280,9 +252,10 @@ jobs:
           fi
           ls -lh busybox
 
-      - name: Build MicroPython from source
+      - name: Build MicroPython
         run: |
-          mkdir -p python-root/usr/local/bin python-root/home
+          mkdir -p python-root/usr/local/bin \
+            python-root/home
           git clone https://github.com/micropython/micropython.git
           cd micropython
           git checkout v1.24.1
@@ -313,9 +286,10 @@ jobs:
             CFLAGS_EXTRA="-static -I/usr/include/mbedtls" \
             LDFLAGS_EXTRA="-static" \
             MICROPY_PY_CRYPTOLIB=0
-          cp micropython ../../../python-root/usr/local/bin/ \
+          cp micropython \
+            ../../../python-root/usr/local/bin/ \
             || cp build-standard/micropython \
-                 ../../../python-root/usr/local/bin/ \
+              ../../../python-root/usr/local/bin/ \
             || { echo "ERROR: no micropython"; exit 1; }
           cd ../../..
           rm -rf micropython
@@ -336,42 +310,12 @@ jobs:
           cp -a "$WS/busybox-1.36.1/_install/"* "$R/"
           cp -a "$WS/python-root/"* "$R/"
 
-          printf '%s\n' \
-            '#!/bin/sh' \
-            'IFACE="$1"' \
-            '[ -n "$IFACE" ] || exit 1' \
-            'case "$2" in' \
-            'deconfig)' \
-            '  ip addr flush dev "$IFACE" 2>/dev/null' \
-            '  ip link set "$IFACE" down 2>/dev/null' \
-            '  ;;' \
-            'bound|renew)' \
-            '  ip addr add "$ip/$mask" dev "$IFACE" 2>/dev/null' \
-            '  ip link set "$IFACE" up 2>/dev/null' \
-            '  if [ -n "$router" ]; then' \
-            '    ip route del default 2>/dev/null' \
-            '    for r in $router; do' \
-            '      ip route add default via "$r" dev "$IFACE" 2>/dev/null' \
-            '      break' \
-            '    done' \
-            '  fi' \
-            '  if [ -n "$dns" ]; then' \
-            '    echo "# udhcpc" > /etc/resolv.conf' \
-            '    for ns in $dns; do' \
-            '      echo "nameserver $ns" >> /etc/resolv.conf' \
-            '    done' \
-            '  fi' \
-            '  ;;' \
-            'esac' \
-            'exit 0' \
-            > "$R/usr/share/udhcpc/default.script"
-          chmod +x "$R/usr/share/udhcpc/default.script"
-
-          if [ -f "$WS/linux-6.18/modules.tar.gz" ]; then
-            tar -xzf "$WS/linux-6.18/modules.tar.gz" \
+          # Kernel modules
+          [ -f "$WS/linux-6.18/modules.tar.gz" ] \
+            && tar -xzf "$WS/linux-6.18/modules.tar.gz" \
               -C "$R/"
-          fi
 
+          # MicroPython verification
           [ -f "$R/usr/local/bin/micropython" ] || {
             echo "ERROR: micropython missing"; exit 1; }
           chmod 555 "$R/usr/local/bin/micropython"
@@ -384,23 +328,59 @@ jobs:
             > "$R/etc/profile.d/python.sh"
           chmod +x "$R/etc/profile.d/python.sh"
 
-          sudo mknod -m 666 "$R/dev/null" c 1 3 2>/dev/null || true
-          sudo mknod -m 644 "$R/dev/console" c 5 1 2>/dev/null || true
+          sudo mknod -m 666 "$R/dev/null" c 1 3 \
+            2>/dev/null || true
+          sudo mknod -m 644 "$R/dev/console" c 5 1 \
+            2>/dev/null || true
           for t in 1 2 3 4; do
-            sudo mknod -m 660 "$R/dev/tty${t}" c 4 "$t" 2>/dev/null || true
+            sudo mknod -m 660 "$R/dev/tty${t}" c 4 "$t" \
+              2>/dev/null || true
           done
 
-          # === about ===
+          # udhcpc script (printf avoids leading spaces)
+          printf '%s\n' \
+            '#!/bin/sh' \
+            'IFACE="$1"' \
+            '[ -n "$IFACE" ] || exit 1' \
+            'case "$2" in' \
+            '  deconfig)' \
+            '    ip addr flush dev "$IFACE" 2>/dev/null' \
+            '    ip link set "$IFACE" down 2>/dev/null' \
+            '    ;;' \
+            '  bound|renew)' \
+            '    ip addr add "$ip/$mask" dev "$IFACE" 2>/dev/null' \
+            '    ip link set "$IFACE" up 2>/dev/null' \
+            '    [ -n "$router" ] && {' \
+            '      ip route del default 2>/dev/null' \
+            '      for r in $router; do' \
+            '        ip route add default via "$r" dev "$IFACE" 2>/dev/null' \
+            '        break' \
+            '      done' \
+            '    }' \
+            '    [ -n "$dns" ] && {' \
+            '      echo "# udhcpc" > /etc/resolv.conf' \
+            '      for ns in $dns; do' \
+            '        echo "nameserver $ns" >> /etc/resolv.conf' \
+            '      done' \
+            '    }' \
+            '    ;;' \
+            'esac' \
+            'exit 0' \
+            > "$R/usr/share/udhcpc/default.script"
+          chmod +x "$R/usr/share/udhcpc/default.script"
+
+          # about
           printf '%s\n' \
             '#!/bin/sh' \
             'echo "=== GudaoUI Linux V1 ==="' \
             'echo "Kernel: $(uname -r)"' \
             'echo "Arch:   $(uname -m)"' \
-            'echo "Cmds: about calc python desktop reboot poweroff"' \
+            'echo "Cmds: about calc python"' \
+            'echo "      desktop reboot poweroff"' \
             > "$R/usr/local/bin/about"
           chmod +x "$R/usr/local/bin/about"
 
-          # === calc ===
+          # calc
           printf '%s\n' \
             '#!/bin/sh' \
             '[ $# -eq 0 ] && echo "Usage: calc EXPR" && exit 1' \
@@ -408,19 +388,19 @@ jobs:
             > "$R/usr/local/bin/calc"
           chmod +x "$R/usr/local/bin/calc"
 
-          # === reboot ===
+          # reboot
           printf '%s\n' \
             '#!/bin/sh' \
-            'echo "System is rebooting..."' \
+            'echo "Rebooting..."' \
             'sync' \
             '/bin/busybox reboot -f' \
             > "$R/usr/local/bin/reboot"
           chmod +x "$R/usr/local/bin/reboot"
 
-          # === poweroff ===
+          # poweroff
           printf '%s\n' \
             '#!/bin/sh' \
-            'echo "System is powering off..."' \
+            'echo "Powering off..."' \
             'sync' \
             '/bin/busybox poweroff -f' \
             > "$R/usr/local/bin/poweroff"
@@ -434,115 +414,126 @@ jobs:
           ln -sf poweroff halt
           cd "$WS"
 
-          # === init script ===
-          cat > "$R/init" << 'INITEOF'
-#!/bin/sh
-export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin
-export TERM=linux
-trap '' HUP INT QUIT TERM TSTP
+          # init script: heredoc + sed strip 10 spaces
+          cat > "$R/init" << 'INIT_HEREDOC'
+          #!/bin/sh
+          export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin
+          export TERM=linux
+          trap '' HUP INT QUIT TERM TSTP
 
-/bin/busybox mount -t proc none /proc
-/bin/busybox mount -t sysfs none /sys
-/bin/busybox mount -t devtmpfs none /dev
-/bin/busybox mount -t tmpfs tmpfs /tmp
-/bin/busybox mount -t tmpfs tmpfs /run
-/bin/busybox mkdir -p /dev/shm
-/bin/busybox mount -t tmpfs tmpfs /dev/shm
-/bin/busybox mkdir -p /dev/shm /run/lock
-/bin/busybox --install -s
-/bin/busybox echo "gudao-ui" \
-  > /proc/sys/kernel/hostname 2>/dev/null || true
-sleep 2
+          /bin/busybox mount -t proc none /proc
+          /bin/busybox mount -t sysfs none /sys
+          /bin/busybox mount -t devtmpfs none /dev
+          /bin/busybox mount -t tmpfs tmpfs /tmp
+          /bin/busybox mount -t tmpfs tmpfs /run
+          /bin/busybox mkdir -p /dev/shm
+          /bin/busybox mount -t tmpfs tmpfs /dev/shm
+          /bin/busybox mkdir -p /dev/shm /run/lock
+          /bin/busybox --install -s
+          /bin/busybox echo "gudao-ui" \
+            > /proc/sys/kernel/hostname 2>/dev/null || true
+          sleep 2
 
-echo "=== Network ==="
-IFACES=""
-for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
-  IFACES=$(ip link show 2>/dev/null \
-    | grep -E "^[0-9]+: (eth|ens|enp)" \
-    | sed 's/^[0-9]*: //' \
-    | sed 's/:.*$//' \
-    | tr '\n' ' ')
-  [ -n "$IFACES" ] && break
-  sleep 1
-done
-[ -z "$IFACES" ] && IFACES="eth0"
-echo "Interfaces: $IFACES"
+          echo "=== Network ==="
+          IFACES=""
+          for i in $(seq 1 15); do
+            IFACES=$(ip link show 2>/dev/null \
+              | grep -E "^[0-9]+: (eth|ens|enp)" \
+              | sed 's/^[0-9]*: //' \
+              | sed 's/:.*$//' \
+              | tr '\n' ' ')
+            [ -n "$IFACES" ] && break
+            sleep 1
+          done
+          [ -z "$IFACES" ] && IFACES="eth0"
+          echo "Interfaces: $IFACES"
 
-for iface in $IFACES; do
-  ip link set "$iface" up 2>/dev/null
-  sleep 3
-  if udhcpc -i "$iface" \
-    -s /usr/share/udhcpc/default.script \
-    -n -t 8 -T 3 -A 8 2>&1; then
-    echo "DHCP ok on $iface"
-    break
-  else
-    echo "DHCP fail, static fallback"
-    ip addr add 10.0.2.15/24 dev "$iface" 2>/dev/null
-    ip route add default via 10.0.2.2 \
-      dev "$iface" 2>/dev/null || true
-    echo "nameserver 8.8.8.8" > /etc/resolv.conf
-    break
-  fi
-done
+          for iface in $IFACES; do
+            ip link set "$iface" up 2>/dev/null
+            sleep 3
+            if udhcpc -i "$iface" \
+              -s /usr/share/udhcpc/default.script \
+              -n -t 8 -T 3 -A 8 2>&1; then
+              echo "DHCP ok on $iface"
+              break
+            else
+              echo "DHCP fail, static fallback"
+              ip addr add 10.0.2.15/24 dev "$iface" 2>/dev/null
+              ip route add default via 10.0.2.2 \
+                dev "$iface" 2>/dev/null || true
+              echo "nameserver 8.8.8.8" > /etc/resolv.conf
+              break
+            fi
+          done
 
-if ! ip addr show 2>/dev/null | grep -q "inet "; then
-  ip addr add 10.0.2.15/24 dev eth0 2>/dev/null
-  ip link set eth0 up
-  ip route add default via 10.0.2.2 2>/dev/null
-  echo "nameserver 8.8.8.8" > /etc/resolv.conf
-fi
+          if ! ip addr show 2>/dev/null | grep -q "inet "; then
+            ip addr add 10.0.2.15/24 dev eth0 2>/dev/null
+            ip link set eth0 up
+            ip route add default via 10.0.2.2 2>/dev/null
+            echo "nameserver 8.8.8.8" > /etc/resolv.conf
+          fi
 
-MEM=$(grep MemTotal /proc/meminfo \
-  | awk '{print int($2/1024)}')
-clear
-echo "========================================"
-echo "     GudaoUI Linux V1"
-echo "========================================"
-echo "Cmds: about calc python"
-echo "      desktop reboot poweroff"
-echo "Sys:  Linux $(uname -r) $(uname -m)"
-echo "Mem:  ${MEM:-?}MB"
-command -v python >/dev/null 2>&1 \
-  && python --version 2>&1
-IP=$(ip addr show 2>/dev/null \
-  | grep "inet " | head -1 \
-  | awk '{print $2}' | cut -d/ -f1)
-[ -n "$IP" ] && echo "IP: $IP"
-echo ""
+          MEM=$(grep MemTotal /proc/meminfo \
+            | awk '{print int($2/1024)}')
+          clear
+          echo "========================================"
+          echo "     GudaoUI Linux V1"
+          echo "========================================"
+          echo "Cmds: about calc python"
+          echo "      desktop reboot poweroff"
+          echo "Sys:  Linux $(uname -r) $(uname -m)"
+          echo "Mem:  ${MEM:-?}MB"
+          command -v python >/dev/null 2>&1 \
+            && python --version 2>&1
+          IP=$(ip addr show 2>/dev/null \
+            | grep "inet " | head -1 \
+            | awk '{print $2}' | cut -d/ -f1)
+          [ -n "$IP" ] && echo "IP: $IP"
+          echo ""
 
-DW=""
-[ -f /proc/cmdline ] && \
-  DW=$(sed 's/.*desktop=//;s/ .*//' /proc/cmdline)
-[ -z "$DW" ] && [ -f /etc/default-desktop ] && \
-  DW=$(cat /etc/default-desktop)
-HD=0
-[ -x /usr/bin/startx ] && HD=1
-[ -x /usr/bin/xinit ] && HD=1
+          DW=""
+          [ -f /proc/cmdline ] && \
+            DW=$(sed 's/.*desktop=//;s/ .*//' /proc/cmdline)
+          [ -z "$DW" ] && [ -f /etc/default-desktop ] && \
+            DW=$(cat /etc/default-desktop)
+          HD=0
+          [ -x /usr/bin/startx ] && HD=1
+          [ -x /usr/bin/xinit ] && HD=1
 
-if [ -n "$DW" ] && [ "$DW" != "console" ] \
-  && [ "$HD" -eq 1 ]; then
-  echo "Desktop: $DW"
-  export HOME=/root
-  start-desktop "$DW" || true
-  echo "Desktop ended, console mode"
-fi
+          if [ -n "$DW" ] && [ "$DW" != "console" ] \
+            && [ "$HD" -eq 1 ]; then
+            echo "Desktop: $DW"
+            export HOME=/root
+            start-desktop "$DW" || true
+            echo "Desktop ended, console mode"
+          fi
 
-echo "Welcome to GudaoUI Linux!"
-exec /bin/sh
-INITEOF
+          echo "Welcome to GudaoUI Linux!"
+          exec /bin/sh
+          INIT_HEREDOC
+          sed -i 's/^          //' "$R/init"
           chmod +x "$R/init"
 
-          echo "root:x:0:0:root:/root:/bin/sh" \
+          # System files (printf, no leading spaces)
+          printf '%s\n' \
+            'root:x:0:0:root:/root:/bin/sh' \
             > "$R/etc/passwd"
-          echo "root:x:0:" > "$R/etc/group"
+          printf '%s\n' 'root:x:0:' > "$R/etc/group"
           printf '%s\n' \
             'nameserver 114.114.114.114' \
             'nameserver 8.8.8.8' \
             'nameserver 223.5.5.5' \
             > "$R/etc/resolv.conf"
-          echo "127.0.0.1 localhost gudao-ui" \
+          echo '127.0.0.1 localhost gudao-ui' \
             > "$R/etc/hosts"
+          printf '%s\n' \
+            'proc    /proc    proc    defaults    0 0' \
+            'sysfs   /sys     sysfs   defaults    0 0' \
+            'devtmpfs /dev    devtmpfs defaults  0 0' \
+            'tmpfs   /tmp     tmpfs   defaults    0 0' \
+            'tmpfs   /run     tmpfs   defaults    0 0' \
+            'tmpfs   /dev/shm tmpfs   defaults    0 0' \
+            > "$R/etc/fstab"
           printf '%s\n' \
             'export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin' \
             'export TERM=linux' \
@@ -552,19 +543,18 @@ INITEOF
             > "$R/etc/profile"
           echo "rootfs: $(du -sh "$R" | cut -f1)"
 
-      - name: Download X11 and desktop packages
+      - name: Download X11 packages
         if: env.DESKTOP != 'none'
         run: |
           sudo apt-get update
-          PKGS="xserver-xorg-core xserver-xorg xinit xterm \
-            x11-utils xfonts-base \
+          PKGS="xserver-xorg-core xserver-xorg xinit \
+            xterm x11-utils xfonts-base \
             xserver-xorg-input-libinput"
           case "${{ env.DESKTOP }}" in
             icewm)   PKGS="$PKGS icewm" ;;
             fluxbox) PKGS="$PKGS fluxbox" ;;
             both)    PKGS="$PKGS icewm fluxbox" ;;
           esac
-          echo "Packages: $PKGS"
           mkdir -p /tmp/x11-debs
           apt-cache depends --recurse \
             --no-recommends --no-suggests \
@@ -578,33 +568,27 @@ INITEOF
           DL=0; SK=0
           while IFS= read -r p; do
             [ -z "$p" ] && continue
-            if apt-get download "$p" 2>/dev/null; then
-              DL=$((DL+1))
-            else
-              SK=$((SK+1))
-            fi
+            apt-get download "$p" 2>/dev/null \
+              && DL=$((DL+1)) || SK=$((SK+1))
           done < /tmp/pkg-list.txt
-          cd "$GITHUB_WORKSPACE"
-          echo "Downloaded=$DL Skipped=$SK"
-          echo "Debs: $(ls /tmp/x11-debs/*.deb \
-            2>/dev/null | wc -l)"
+          echo "DL=$DL SK=$SK"
+          echo "Debs: $(ls *.deb 2>/dev/null | wc -l)"
 
-      - name: Install desktop environment into rootfs
+      - name: Install desktop into rootfs
         if: env.DESKTOP != 'none'
         run: |
           WS="$GITHUB_WORKSPACE"
           R="$WS/rootfs"
           DD="/tmp/x11-debs"
-          CNT=$(ls "$DD"/*.deb 2>/dev/null | wc -l)
-          echo "Extracting $CNT debs..."
           EX=0
           for f in "$DD"/*.deb; do
             [ -f "$f" ] || continue
             dpkg-deb -x "$f" "$R/" 2>/dev/null \
               && EX=$((EX+1))
           done
-          echo "Extracted $EX"
+          echo "Extracted $EX debs"
 
+          # ld config
           printf '%s\n' \
             '/lib/x86_64-linux-gnu' \
             '/usr/lib/x86_64-linux-gnu' \
@@ -618,6 +602,7 @@ INITEOF
 
           mkdir -p "$R/etc/X11/xinit" "$R/root"
 
+          # xinitrc (printf, no leading spaces)
           printf '%s\n' \
             '#!/bin/sh' \
             '[ -f "$HOME/.xinitrc" ] && exec "$HOME/.xinitrc"' \
@@ -625,6 +610,7 @@ INITEOF
             > "$R/etc/X11/xinit/xinitrc"
           chmod +x "$R/etc/X11/xinit/xinitrc"
 
+          # root .xinitrc (printf)
           printf '%s\n' \
             '#!/bin/sh' \
             'export XDG_SESSION_TYPE=x11' \
@@ -635,105 +621,104 @@ INITEOF
             > "$R/root/.xinitrc"
           chmod +x "$R/root/.xinitrc"
 
-          # === Replace Debian startx ===
-          cat > "$R/usr/bin/startx" << 'STXEOF'
-#!/bin/sh
-export HOME="${HOME:-/root}"
-export DISPLAY="${DISPLAY:-:0}"
-export XDG_SESSION_TYPE=x11
-XAUTH="$HOME/.Xauthority"
-touch "$XAUTH" && chmod 600 "$XAUTH"
-CK=$(head -c 16 /dev/urandom \
-  | od -An -tx1 | tr -d ' \n')
-[ -n "$CK" ] && {
-  printf '\x00' >> "$XAUTH"
-  printf '%s' "$DISPLAY" >> "$XAUTH"
-  printf '\x00' >> "$XAUTH"
-  printf '%s' "MIT-MAGIC-COOKIE-1" >> "$XAUTH"
-  printf '\x00' >> "$XAUTH"
-  printf '%04d' 16 >> "$XAUTH"
-  printf '%s' "$CK" >> "$XAUTH"
-}
-killall Xorg 2>/dev/null
-killall X 2>/dev/null
-sleep 1
-if [ -x /usr/bin/Xorg ]; then
-  /usr/bin/Xorg "$DISPLAY" &
-elif [ -x /usr/bin/X ]; then
-  /usr/bin/X "$DISPLAY" &
-else
-  echo "ERROR: No X server"
-  exit 1
-fi
-T=0
-while [ $T -lt 10 ]; do
-  pgrep Xorg >/dev/null 2>&1 && break
-  sleep 1; T=$((T+1))
-done
-pgrep Xorg >/dev/null 2>&1 \
-  || { echo "ERROR: X failed"; exit 1; }
-echo "X started on $DISPLAY"
-[ -x "$HOME/.xinitrc" ] && exec "$HOME/.xinitrc"
-exec xterm
-STXEOF
+          # Replace Debian startx (heredoc + strip)
+          cat > "$R/usr/bin/startx" << 'STARTX_HC'
+          #!/bin/sh
+          export HOME="${HOME:-/root}"
+          export DISPLAY="${DISPLAY:-:0}"
+          export XDG_SESSION_TYPE=x11
+          XAUTH="$HOME/.Xauthority"
+          touch "$XAUTH" && chmod 600 "$XAUTH"
+          CK=$(head -c 16 /dev/urandom \
+            | od -An -tx1 | tr -d ' \n')
+          [ -n "$CK" ] && {
+            printf '\x00' >> "$XAUTH"
+            printf '%s' "$DISPLAY" >> "$XAUTH"
+            printf '\x00' >> "$XAUTH"
+            printf '%s' "MIT-MAGIC-COOKIE-1" >> "$XAUTH"
+            printf '\x00' >> "$XAUTH"
+            printf '%04d' 16 >> "$XAUTH"
+            printf '%s' "$CK" >> "$XAUTH"
+          }
+          killall Xorg 2>/dev/null
+          killall X 2>/dev/null
+          sleep 1
+          if [ -x /usr/bin/Xorg ]; then
+            /usr/bin/Xorg "$DISPLAY" &
+          elif [ -x /usr/bin/X ]; then
+            /usr/bin/X "$DISPLAY" &
+          else
+            echo "ERROR: No X server"; exit 1
+          fi
+          T=0
+          while [ $T -lt 10 ]; do
+            pgrep Xorg >/dev/null 2>&1 && break
+            sleep 1; T=$((T+1))
+          done
+          pgrep Xorg >/dev/null 2>&1 \
+            || { echo "ERROR: X failed"; exit 1; }
+          echo "X started on $DISPLAY"
+          [ -x "$HOME/.xinitrc" ] \
+            && exec "$HOME/.xinitrc"
+          exec xterm
+          STARTX_HC
+          sed -i 's/^          //' "$R/usr/bin/startx"
           chmod +x "$R/usr/bin/startx"
 
-          # === start-desktop ===
-          cat > "$R/usr/local/bin/start-desktop" << 'SDEOF'
-#!/bin/sh
-export HOME=/root DISPLAY=:0
-export XDG_SESSION_TYPE=x11
-export XDG_CURRENT_DESKTOP=GudaoUI
-WM="${1:-fluxbox}"
-case "$WM" in
-  icewm)
-    echo "exec icewm --replace" > /root/.xinitrc ;;
-  both)
-    echo "exec fluxbox" > /root/.xinitrc ;;
-  *)
-    echo "exec fluxbox" > /root/.xinitrc ;;
-esac
-chmod +x /root/.xinitrc
-if [ -x /usr/bin/startx ]; then
-  exec startx
-elif [ -x /usr/bin/xinit ]; then
-  exec xinit -- /usr/bin/Xorg :0
-else
-  echo "ERROR: no X init"; exit 1
-fi
-SDEOF
+          # start-desktop (heredoc + strip)
+          cat > "$R/usr/local/bin/start-desktop" << 'SD_HC'
+          #!/bin/sh
+          export HOME=/root DISPLAY=:0
+          export XDG_SESSION_TYPE=x11
+          export XDG_CURRENT_DESKTOP=GudaoUI
+          WM="${1:-fluxbox}"
+          case "$WM" in
+            icewm) echo "exec icewm --replace" \
+              > /root/.xinitrc ;;
+            *) echo "exec fluxbox" \
+              > /root/.xinitrc ;;
+          esac
+          chmod +x /root/.xinitrc
+          if [ -x /usr/bin/startx ]; then
+            exec startx
+          elif [ -x /usr/bin/xinit ]; then
+            exec xinit -- /usr/bin/Xorg :0
+          else
+            echo "ERROR: no X init"; exit 1
+          fi
+          SD_HC
+          sed -i 's/^          //' \
+            "$R/usr/local/bin/start-desktop"
           chmod +x "$R/usr/local/bin/start-desktop"
 
-          # === desktop helper ===
-          cat > "$R/usr/local/bin/desktop" << 'DHEOF'
-#!/bin/sh
-echo "GudaoUI Desktop"
-command -v icewm >/dev/null 2>&1 \
-  && echo "  start-desktop icewm"
-command -v fluxbox >/dev/null 2>&1 \
-  && echo "  start-desktop fluxbox"
-if [ -f /etc/default-desktop ]; then
-  W=$(cat /etc/default-desktop)
-  echo "Default: $W"
-  start-desktop "$W"
-else
-  start-desktop fluxbox
-fi
-DHEOF
+          # desktop helper (heredoc + strip)
+          cat > "$R/usr/local/bin/desktop" << 'DH_HC'
+          #!/bin/sh
+          echo "GudaoUI Desktop"
+          command -v icewm >/dev/null 2>&1 \
+            && echo "  start-desktop icewm"
+          command -v fluxbox >/dev/null 2>&1 \
+            && echo "  start-desktop fluxbox"
+          if [ -f /etc/default-desktop ]; then
+            W=$(cat /etc/default-desktop)
+            echo "Default: $W"
+            start-desktop "$W"
+          else
+            start-desktop fluxbox
+          fi
+          DH_HC
+          sed -i 's/^          //' \
+            "$R/usr/local/bin/desktop"
           chmod +x "$R/usr/local/bin/desktop"
 
+          # Default WM (printf)
           case "${{ env.DESKTOP }}" in
-            icewm)
-              echo "icewm" > "$R/etc/default-desktop"
-              ;;
-            fluxbox)
-              echo "fluxbox" > "$R/etc/default-desktop"
-              ;;
-            both)
-              echo "fluxbox" > "$R/etc/default-desktop"
-              ;;
+            icewm)   echo "icewm" > "$R/etc/default-desktop" ;;
+            fluxbox) echo "fluxbox" > "$R/etc/default-desktop" ;;
+            both)    echo "fluxbox" > "$R/etc/default-desktop" ;;
           esac
 
+          # Fluxbox config (printf, no leading spaces)
           mkdir -p "$R/root/.fluxbox"
           printf '%s\n' \
             'session.screen0.toolbar.visible: true' \
@@ -762,6 +747,7 @@ DHEOF
             > "$R/root/.fluxbox/apps"
           chmod 644 "$R/root/.fluxbox/apps"
 
+          # IceWM config (printf)
           mkdir -p "$R/root/.icewm"
           printf '%s\n' \
             'TaskBarShowClock = 1' \
@@ -775,8 +761,7 @@ DHEOF
             > "$R/root/.icewm/preferences"
           chmod 644 "$R/root/.icewm/preferences"
 
-          echo "Desktop installed"
-          echo "  Rootfs: $(du -sh "$R" | cut -f1)"
+          echo "Desktop: $(du -sh "$R" | cut -f1)"
 
       - name: Create squashfs
         run: |
@@ -792,51 +777,58 @@ DHEOF
           mkdir -p "$ID"/{bin,dev,etc,proc,root,sys} \
             "$ID"/{mnt/iso,mnt/root,mnt/overlay,newroot}
           cp -a "$WS/busybox-1.36.1/_install/"* "$ID/"
-          sudo mknod -m 600 "$ID/dev/console" c 5 1 2>/dev/null || true
-          sudo mknod -m 666 "$ID/dev/null" c 1 3 2>/dev/null || true
+          sudo mknod -m 600 "$ID/dev/console" c 5 1 \
+            2>/dev/null || true
+          sudo mknod -m 666 "$ID/dev/null" c 1 3 \
+            2>/dev/null || true
           for t in 1 2 3 4; do
-            sudo mknod -m 660 "$ID/dev/tty${t}" c 4 "$t" 2>/dev/null || true
+            sudo mknod -m 660 "$ID/dev/tty${t}" \
+              c 4 "$t" 2>/dev/null || true
           done
-          cat > "$ID/init" << 'RAMFSEOF'
-#!/bin/sh
-mount -t proc none /proc
-mount -t sysfs none /sys
-mount -t devtmpfs none /dev
-sleep 1
-echo "Booting squashfs+overlay..."
-mkdir -p /mnt/iso
-ISO_OK=0
-for d in /dev/sr* /dev/hd* /dev/sd*; do
-  [ -e "$d" ] || continue
-  if mount -t iso9660 "$d" /mnt/iso 2>/dev/null; then
-    echo "Mounted $d"
-    ISO_OK=1; break
-  fi
-done
-[ $ISO_OK -eq 0 ] && { echo "ERROR: no ISO"; exec sh; }
-[ -f /mnt/iso/boot/rootfs.squashfs ] || {
-  echo "ERROR: squashfs not found"; exec sh; }
-mount -t squashfs -o ro,loop \
-  /mnt/iso/boot/rootfs.squashfs /mnt/root || {
-  echo "ERROR: squashfs fail"; exec sh; }
-mkdir -p /mnt/overlay
-mount -t tmpfs tmpfs /mnt/overlay
-mkdir -p /mnt/overlay/upper /mnt/overlay/work
-mount -t overlay overlay \
-  -o lowerdir=/mnt/root,upperdir=/mnt/overlay/upper,workdir=/mnt/overlay/work \
-  /newroot || { echo "ERROR: overlay fail"; exec sh; }
-[ -x /newroot/init ] || { echo "ERROR: no init"; exec sh; }
-umount /proc /sys /dev 2>/dev/null
-exec switch_root /newroot /init
-RAMFSEOF
+          # initramfs init (heredoc + strip)
+          cat > "$ID/init" << 'IR_HC'
+          #!/bin/sh
+          mount -t proc none /proc
+          mount -t sysfs none /sys
+          mount -t devtmpfs none /dev
+          sleep 1
+          echo "Booting squashfs+overlay..."
+          mkdir -p /mnt/iso
+          ISO_OK=0
+          for d in /dev/sr* /dev/hd* /dev/sd*; do
+            [ -e "$d" ] || continue
+            if mount -t iso9660 "$d" /mnt/iso \
+              2>/dev/null; then
+              echo "Mounted $d"; ISO_OK=1; break
+            fi
+          done
+          [ $ISO_OK -eq 0 ] && {
+            echo "ERROR: no ISO"; exec sh; }
+          [ -f /mnt/iso/boot/rootfs.squashfs ] || {
+            echo "ERROR: squashfs not found"; exec sh; }
+          mount -t squashfs -o ro,loop \
+            /mnt/iso/boot/rootfs.squashfs /mnt/root || {
+            echo "ERROR: squashfs fail"; exec sh; }
+          mkdir -p /mnt/overlay
+          mount -t tmpfs tmpfs /mnt/overlay
+          mkdir -p /mnt/overlay/upper /mnt/overlay/work
+          mount -t overlay overlay \
+            -o lowerdir=/mnt/root,upperdir=/mnt/overlay/upper,workdir=/mnt/overlay/work \
+            /newroot || {
+            echo "ERROR: overlay fail"; exec sh; }
+          [ -x /newroot/init ] || {
+            echo "ERROR: no init"; exec sh; }
+          umount /proc /sys /dev 2>/dev/null
+          exec switch_root /newroot /init
+          IR_HC
+          sed -i 's/^          //' "$ID/init"
           chmod +x "$ID/init"
           cd "$ID"
           find . | cpio -o -H newc \
             | gzip > "$WS/initramfs.cpio.gz"
-          cd "$WS"
-          du -h initramfs.cpio.gz
+          du -h "$WS/initramfs.cpio.gz"
 
-      - name: Create bootable ISO
+      - name: Create ISO
         run: |
           WS="$GITHUB_WORKSPACE"
           mkdir -p "$WS/iso/boot/grub"
@@ -845,73 +837,74 @@ RAMFSEOF
           cp "$WS/initramfs.cpio.gz" "$WS/iso/boot/"
           cp "$WS/rootfs.squashfs" "$WS/iso/boot/"
 
-          cat > "$WS/iso/boot/grub/grub.cfg" << 'GBEOF'
-set default=0
-set timeout=5
-set menu_color_normal=cyan/blue
-set menu_color_highlight=white/blue
-GBEOF
+          # GRUB base (printf, no leading spaces)
+          printf '%s\n' \
+            'set default=0' \
+            'set timeout=5' \
+            'set menu_color_normal=cyan/blue' \
+            'set menu_color_highlight=white/blue' \
+            > "$WS/iso/boot/grub/grub.cfg"
 
+          # GRUB entries per desktop mode
           case "${{ env.DESKTOP }}" in
             none)
-              cat >> "$WS/iso/boot/grub/grub.cfg" << 'GEOF'
-menuentry "GudaoUI Linux (Console)" {
-  linux /boot/vmlinuz quiet
-  initrd /boot/initramfs.cpio.gz
-}
-menuentry "GudaoUI Linux (Debug)" {
-  linux /boot/vmlinuz loglevel=7
-  initrd /boot/initramfs.cpio.gz
-}
-GEOF
+              printf '%s\n' \
+                'menuentry "GudaoUI (Console)" {' \
+                '  linux /boot/vmlinuz quiet' \
+                '  initrd /boot/initramfs.cpio.gz' \
+                '}' \
+                'menuentry "GudaoUI (Debug)" {' \
+                '  linux /boot/vmlinuz loglevel=7' \
+                '  initrd /boot/initramfs.cpio.gz' \
+                '}' \
+                >> "$WS/iso/boot/grub/grub.cfg"
               ;;
             icewm)
-              cat >> "$WS/iso/boot/grub/grub.cfg" << 'GEOF'
-menuentry ">>> GudaoUI + IceWM <<<" {
-  linux /boot/vmlinuz quiet desktop=icewm
-  initrd /boot/initramfs.cpio.gz
-}
-menuentry "GudaoUI (Console)" {
-  linux /boot/vmlinuz quiet desktop=console
-  initrd /boot/initramfs.cpio.gz
-}
-GEOF
+              printf '%s\n' \
+                'menuentry ">>> GudaoUI + IceWM <<<" {' \
+                '  linux /boot/vmlinuz quiet desktop=icewm' \
+                '  initrd /boot/initramfs.cpio.gz' \
+                '}' \
+                'menuentry "GudaoUI (Console)" {' \
+                '  linux /boot/vmlinuz quiet desktop=console' \
+                '  initrd /boot/initramfs.cpio.gz' \
+                '}' \
+                >> "$WS/iso/boot/grub/grub.cfg"
               ;;
             fluxbox)
-              cat >> "$WS/iso/boot/grub/grub.cfg" << 'GEOF'
-menuentry ">>> GudaoUI + Fluxbox <<<" {
-  linux /boot/vmlinuz quiet desktop=fluxbox
-  initrd /boot/initramfs.cpio.gz
-}
-menuentry "GudaoUI (Console)" {
-  linux /boot/vmlinuz quiet desktop=console
-  initrd /boot/initramfs.cpio.gz
-}
-GEOF
+              printf '%s\n' \
+                'menuentry ">>> GudaoUI + Fluxbox <<<" {' \
+                '  linux /boot/vmlinuz quiet desktop=fluxbox' \
+                '  initrd /boot/initramfs.cpio.gz' \
+                '}' \
+                'menuentry "GudaoUI (Console)" {' \
+                '  linux /boot/vmlinuz quiet desktop=console' \
+                '  initrd /boot/initramfs.cpio.gz' \
+                '}' \
+                >> "$WS/iso/boot/grub/grub.cfg"
               ;;
             both)
-              cat >> "$WS/iso/boot/grub/grub.cfg" << 'GEOF'
-menuentry ">>> GudaoUI + Fluxbox <<<" {
-  linux /boot/vmlinuz quiet desktop=fluxbox
-  initrd /boot/initramfs.cpio.gz
-}
-menuentry ">>> GudaoUI + IceWM <<<" {
-  linux /boot/vmlinuz quiet desktop=icewm
-  initrd /boot/initramfs.cpio.gz
-}
-menuentry "GudaoUI (Console)" {
-  linux /boot/vmlinuz quiet desktop=console
-  initrd /boot/initramfs.cpio.gz
-}
-GEOF
+              printf '%s\n' \
+                'menuentry ">>> GudaoUI + Fluxbox <<<" {' \
+                '  linux /boot/vmlinuz quiet desktop=fluxbox' \
+                '  initrd /boot/initramfs.cpio.gz' \
+                '}' \
+                'menuentry ">>> GudaoUI + IceWM <<<" {' \
+                '  linux /boot/vmlinuz quiet desktop=icewm' \
+                '  initrd /boot/initramfs.cpio.gz' \
+                '}' \
+                'menuentry "GudaoUI (Console)" {' \
+                '  linux /boot/vmlinuz quiet desktop=console' \
+                '  initrd /boot/initramfs.cpio.gz' \
+                '}' \
+                >> "$WS/iso/boot/grub/grub.cfg"
               ;;
           esac
 
           grub-mkrescue -o "$ISO_NAME" "$WS/iso/"
-          echo "ISO: $ISO_NAME"
           du -h "$ISO_NAME"
 
-      - name: Upload ISO to Artifacts
+      - name: Upload ISO
         uses: actions/upload-artifact@v4
         with:
           name: >-
@@ -930,17 +923,17 @@ GEOF
           body: |
             ## GudaoUI Linux V1
             ### Components
-            - Linux Kernel 6.18 (VM-optimized, DHCP)
-            - BusyBox 1.36.1 (all applets enabled)
+            - Linux Kernel 6.18 (VM, DHCP)
+            - BusyBox 1.36.1 (all applets)
             - MicroPython v1.24.1 (static, SSL)
             ${{ env.DESKTOP != 'none' && format('- Desktop: **{0}**', env.DESKTOP) || '' }}
             ### Commands
             - `about` `calc` `python`
-            - `desktop` / `start-desktop fluxbox`
+            - `desktop` / `start-desktop`
             - `reboot` / `poweroff`
             ### Network
             - DHCP auto, DNS: 114.114.114.114, 8.8.8.8
-            - Drivers: VIRTIO_NET, VMXNET3, E1000, etc.
+            - Drivers: VIRTIO, VMXNET3, E1000, etc.
             ### Architecture
             - squashfs + overlayfs + tmpfs
             ${{ env.DESKTOP != 'none' && '### Desktop\n- GRUB menu or `desktop` command\n- IceWM / Fluxbox + xterm' || '' }}
