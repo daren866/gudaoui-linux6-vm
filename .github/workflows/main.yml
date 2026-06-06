@@ -596,6 +596,17 @@ jobs:
           printf '%s\n' '/lib/x86_64-linux-gnu' '/usr/lib/x86_64-linux-gnu' '/lib64' '/usr/lib64' > "$R/etc/ld.so.conf"
           chmod 644 "$R/etc/ld.so.conf"
           [ -x "$R/usr/sbin/ldconfig" ] && sudo chroot "$R" /usr/sbin/ldconfig 2>/dev/null || true
+          
+          echo "=== Creating library symlinks from /usr/lib/x86_64-linux-gnu to /usr/lib ==="
+          cd "$R/usr/lib"
+          for lib in "$R/usr/lib/x86_64-linux-gnu/"*.so* 2>/dev/null; do
+            [ -f "$lib" ] || continue
+            libname=$(basename "$lib")
+            if [ ! -e "$libname" ] && [ ! -L "$libname" ]; then
+              ln -sf "x86_64-linux-gnu/$libname" "$libname"
+              echo "Created symlink: $libname -> x86_64-linux-gnu/$libname"
+            fi
+          done
 
           mkdir -p "$R/usr/lib/xorg"
           if [ -n "$XORG_BIN" ]; then
