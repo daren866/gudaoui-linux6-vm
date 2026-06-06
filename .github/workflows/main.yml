@@ -357,16 +357,16 @@ jobs:
             '[ -n "$IFACE" ] || exit 1' \
             'case "$2" in' \
             '  deconfig)' \
-            '    ip addr flush dev "$IFACE" 2>/dev/null' \
-            '    ip link set "$IFACE" down 2>/dev/null' \
+            '    /bin/busybox ip addr flush dev "$IFACE" 2>/dev/null' \
+            '    /bin/busybox ip link set "$IFACE" down 2>/dev/null' \
             '    ;;' \
             '  bound|renew)' \
-            '    ip addr add "$ip/$mask" dev "$IFACE" 2>/dev/null' \
-            '    ip link set "$IFACE" up 2>/dev/null' \
+            '    /bin/busybox ip addr add "$ip/$mask" dev "$IFACE" 2>/dev/null' \
+            '    /bin/busybox ip link set "$IFACE" up 2>/dev/null' \
             '    [ -n "$router" ] && {' \
-            '      ip route del default 2>/dev/null' \
+            '      /bin/busybox ip route del default 2>/dev/null' \
             '      for r in $router; do' \
-            '        ip route add default via "$r" dev "$IFACE" 2>/dev/null' \
+            '        /bin/busybox ip route add default via "$r" dev "$IFACE" 2>/dev/null' \
             '        break' \
             '      done' \
             '    }' \
@@ -425,7 +425,7 @@ jobs:
             'echo "=== Network ==="' \
             'IFACES=""' \
             'for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do' \
-            '  IFACES=$(ip link show 2>/dev/null | grep -E "^[0-9]+: (eth|ens|enp)" | sed "s/^[0-9]*: //" | sed "s/:.*$//" | tr "\n" " ")' \
+            '  IFACES=$(/bin/busybox ip link show 2>/dev/null | /bin/busybox grep -E "^[0-9]+: (eth|ens|enp)" | /bin/busybox sed "s/^[0-9]*: //" | /bin/busybox sed "s/:.*$//" | /bin/busybox tr "\n" " ")' \
             '  [ -n "$IFACES" ] && break' \
             '  sleep 1' \
             'done' \
@@ -433,41 +433,41 @@ jobs:
             'echo "Interfaces: $IFACES"' \
             '' \
             'for iface in $IFACES; do' \
-            '  ip link set "$iface" up 2>/dev/null' \
+            '  /bin/busybox ip link set "$iface" up 2>/dev/null' \
             '  sleep 3' \
-            '  if udhcpc -i "$iface" -s /usr/share/udhcpc/default.script -n -t 8 -T 3 -A 8 2>&1; then' \
+            '  if /bin/busybox udhcpc -i "$iface" -s /usr/share/udhcpc/default.script -n -t 8 -T 3 -A 8 2>&1; then' \
             '    echo "DHCP ok on $iface"; break' \
             '  else' \
             '    echo "DHCP fail, static fallback"' \
-            '    ip addr add 10.0.2.15/24 dev "$iface" 2>/dev/null' \
-            '    ip route add default via 10.0.2.2 dev "$iface" 2>/dev/null || true' \
+            '    /bin/busybox ip addr add 10.0.2.15/24 dev "$iface" 2>/dev/null' \
+            '    /bin/busybox ip route add default via 10.0.2.2 dev "$iface" 2>/dev/null || true' \
             '    echo "nameserver 8.8.8.8" > /etc/resolv.conf; break' \
             '  fi' \
             'done' \
             '' \
-            'if ! ip addr show 2>/dev/null | grep -q "inet "; then' \
-            '  ip addr add 10.0.2.15/24 dev eth0 2>/dev/null' \
-            '  ip link set eth0 up' \
-            '  ip route add default via 10.0.2.2 2>/dev/null' \
+            'if ! /bin/busybox ip addr show 2>/dev/null | /bin/busybox grep -q "inet "; then' \
+            '  /bin/busybox ip addr add 10.0.2.15/24 dev eth0 2>/dev/null' \
+            '  /bin/busybox ip link set eth0 up' \
+            '  /bin/busybox ip route add default via 10.0.2.2 2>/dev/null' \
             '  echo "nameserver 8.8.8.8" > /etc/resolv.conf' \
             'fi' \
             '' \
-            'MEM=$(grep MemTotal /proc/meminfo | awk "{print int(\$2/1024)}")' \
-            'clear' \
+            'MEM=$(/bin/busybox grep MemTotal /proc/meminfo | /bin/busybox awk "{print int(\$2/1024)}")' \
+            '/bin/busybox clear' \
             'echo "========================================"' \
             'echo "     GudaoUI Linux V1"' \
             'echo "========================================"' \
             'echo "Cmds: about calc python desktop reboot poweroff"' \
-            'echo "Sys:  Linux $(uname -r) $(uname -m)"' \
+            'echo "Sys:  Linux $(/bin/busybox uname -r) $(/bin/busybox uname -m)"' \
             'echo "Mem:  ${MEM:-?}MB"' \
-            'command -v python >/dev/null 2>&1 && python --version 2>&1' \
-            'IP=$(ip addr show 2>/dev/null | grep "inet " | head -1 | awk "{print \$2}" | cut -d/ -f1)' \
+            '/bin/busybox command -v python >/dev/null 2>&1 && python --version 2>&1' \
+            'IP=$(/bin/busybox ip addr show 2>/dev/null | /bin/busybox grep "inet " | /bin/busybox head -1 | /bin/busybox awk "{print \$2}" | /bin/busybox cut -d/ -f1)' \
             '[ -n "$IP" ] && echo "IP: $IP"' \
             'echo ""' \
             '' \
             'DW=""' \
-            '[ -f /proc/cmdline ] && DW=$(sed "s/.*desktop=//;s/ .*//" /proc/cmdline)' \
-            '[ -z "$DW" ] && [ -f /etc/default-desktop ] && DW=$(cat /etc/default-desktop)' \
+            '[ -f /proc/cmdline ] && DW=$(/bin/busybox sed "s/.*desktop=//;s/ .*//" /proc/cmdline)' \
+            '[ -z "$DW" ] && [ -f /etc/default-desktop ] && DW=$(/bin/busybox cat /etc/default-desktop)' \
             'HD=0; [ -x /usr/bin/startx ] && HD=1; [ -x /usr/bin/xinit ] && HD=1' \
             'if [ -n "$DW" ] && [ "$DW" != "console" ] && [ "$HD" -eq 1 ]; then' \
             '  echo "Desktop: $DW"; export HOME=/root' \
