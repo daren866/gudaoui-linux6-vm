@@ -194,6 +194,8 @@ jobs:
           done
 
           # ALL required applets via grep-append
+          # This writes directly to .config without
+          # needing make oldconfig/olddefconfig
           for A in \
             CUT HEAD TAIL TR SORT UNIQ WC SEQ \
             UNDO PASTE EXPR \
@@ -220,10 +222,10 @@ jobs:
             's/^CONFIG_TC=y/# CONFIG_TC is not set/' \
             .config 2>/dev/null || true
 
-          # BusyBox 1.36.1 does NOT have olddefconfig
-          # Use yes to auto-accept all interactive prompts
-          echo "Running make oldconfig (auto-accept)..."
-          yes "" | make oldconfig 2>/dev/null || true
+          # Do NOT run make oldconfig here
+          # BusyBox has no olddefconfig
+          # yes "" | make oldconfig breaks with pipefail
+          # grep-append writes values directly - sufficient
 
           echo "=== Verify ==="
           FAIL=0
@@ -553,7 +555,7 @@ jobs:
           printf '%s\n' '#!/bin/sh' 'export XDG_SESSION_TYPE=x11' 'export XDG_CURRENT_DESKTOP=GudaoUI' 'xterm -geometry 100x30+50+50 -bg black -fg green -title "GudaoUI" &' 'sleep 1' '[ -n "$WM_CMD" ] && exec $WM_CMD' > "$R/root/.xinitrc"
           chmod +x "$R/root/.xinitrc"
 
-          # startx (printf only, no heredoc)
+          # startx (printf only)
           printf '%s\n' \
             '#!/bin/sh' \
             'export HOME="${HOME:-/root}"' \
@@ -677,7 +679,7 @@ jobs:
             sudo mknod -m 660 "$ID/dev/tty${t}" c 4 "$t" 2>/dev/null || true
           done
 
-          # initramfs init (printf only, no heredoc)
+          # initramfs init (printf only)
           printf '%s\n' \
             '#!/bin/sh' \
             'mount -t proc none /proc' \
@@ -805,7 +807,7 @@ jobs:
             - `desktop` / `start-desktop`
             - `reboot` / `poweroff`
             ### Network
-            - DHCP auto, DNS: 114.114.114.114, 8.8.8.8
+            - DHCP auto, DNS: 14.114.114.114, 8.8.8.8
             - Drivers: VIRTIO, VMXNET3, E1000, etc.
             ### Architecture
             - squashfs + overlayfs + tmpfs
