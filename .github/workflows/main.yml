@@ -164,6 +164,20 @@ jobs:
           scripts/config --enable VGA_ARB
           scripts/config --enable DRM
           scripts/config --enable DRM_VGA16_FB
+          # Loop device support for squashfs mounting
+          for o in BLK_DEV_LOOP BLK_DEV_LOOP_MIN_COUNT; do
+            scripts/config --enable "$o"
+          done
+          # Squashfs filesystem support
+          for o in SQUASHFS SQUASHFS_ZLIB SQUASHFS_LZMA SQUASHFS_XZ \
+            SQUASHFS_LZO SQUASHFS_LZ4 SQUASHFS_ZSTD; do
+            scripts/config --enable "$o"
+          done
+          # Overlay filesystem support
+          for o in OVERLAY_FS OVERLAY_FS_INDEX OVERLAY_FS_REDIRECT_DIR \
+            OVERLAY_FS_METACOPY OVERLAY_FS_REDIRECT_ALWAYS_FOLLOW; do
+            scripts/config --enable "$o"
+          done
           # ISO9660 CD-ROM filesystem support
           for o in ISO9660_FS JOLIET TRANS TYPES DEVFS_FS; do
             scripts/config --enable "$o"
@@ -770,7 +784,7 @@ jobs:
           for t in 1 2 3 4; do
             sudo mknod -m 660 "$ID/dev/tty${t}" c 4 "$t" 2>/dev/null || true
           done
-          printf '%s\n' '#!/bin/sh' 'mount -t proc none /proc' 'mount -t sysfs none /sys' 'mount -t devtmpfs none /dev' 'sleep 2' 'echo "Booting squashfs+overlay..."' 'echo "Available block devices:"' 'ls -la /dev/ | head -40' 'mkdir -p /mnt/iso' 'ISO_OK=0' 'for d in /dev/cdrom /dev/dvd /dev/sr* /dev/scd* /dev/vd* /dev/hd* /dev/sd* /dev/nvme*; do' '[ -b "$d" ] || continue' 'echo "Trying $d..."' 'if mount -t iso9660 "$d" /mnt/iso 2>/dev/null; then' 'echo "SUCCESS: Mounted ISO from $d"' 'ISO_OK=1; break; fi' 'done' 'if [ $ISO_OK -eq 0 ]; then' 'echo "ERROR: No ISO found, listing all devices..."' 'ls -la /dev/' 'exec sh; fi' 'echo "ISO mounted, checking squashfs..."' 'ls -la /mnt/iso/boot/' '[ -f /mnt/iso/boot/rootfs.squashfs ] || { echo "ERROR: squashfs not found"; exec sh; }' 'echo "Mounting squashfs..."' 'mkdir -p /mnt/root' 'mount -t squashfs -o ro,loop /mnt/iso/boot/rootfs.squashfs /mnt/root || { echo "ERROR: squashfs mount fail"; exec sh; }' 'echo "Squashfs mounted successfully"' 'mkdir -p /mnt/overlay' 'mount -t tmpfs tmpfs /mnt/overlay' 'mkdir -p /mnt/overlay/upper /mnt/overlay/work' 'echo "Mounting overlay..."' 'mkdir -p /newroot' 'mount -t overlay overlay -o lowerdir=/mnt/root,upperdir=/mnt/overlay/upper,workdir=/mnt/overlay/work /newroot || { echo "ERROR: overlay fail"; exec sh; }' 'echo "Overlay mounted"' '[ -x /newroot/init ] || { echo "ERROR: no init in newroot"; ls -la /newroot/; exec sh; }' 'echo "Switching to new root..."' 'umount /proc /sys /dev 2>/dev/null' 'exec switch_root /newroot /init' > "$ID/init"
+          printf '%s\n' '#!/bin/sh' 'mount -t proc none /proc' 'mount -t sysfs none /sys' 'mount -t devtmpfs none /dev' 'sleep 2' 'echo "Booting squashfs+overlay..."' 'echo "Available block devices:"' 'ls -la /dev/ | head -40' 'mkdir -p /mnt/iso' 'ISO_OK=0' 'for d in /dev/cdrom /dev/dvd /dev/sr* /dev/scd* /dev/vd* /dev/hd* /dev/sd* /dev/nvme*; do' '[ -b "$d" ] || continue' 'echo "Trying $d..."' 'if mount -t iso9660 "$d" /mnt/iso 2>/dev/null; then' 'echo "SUCCESS: Mounted ISO from $d"' 'ISO_OK=1; break; fi' 'done' 'if [ $ISO_OK -eq 0 ]; then' 'echo "ERROR: No ISO found, listing all devices..."' 'ls -la /dev/' 'exec sh; fi' 'echo "ISO mounted, checking squashfs..."' 'ls -la /mnt/iso/boot/' '[ -f /mnt/iso/boot/rootfs.squashfs ] || { echo "ERROR: squashfs not found"; exec sh; }' 'echo "Mounting squashfs..."' 'mkdir -p /mnt/root' 'echo "Creating loop devices..."' 'for i in 0 1 2 3 4 5 6 7; do' '  mknod -m 660 /dev/loop${i} b 7 ${i} 2>/dev/null' 'done' 'echo "Loop devices created:"' 'ls -la /dev/loop*' 'mount -t squashfs -o ro,loop /mnt/iso/boot/rootfs.squashfs /mnt/root || { echo "ERROR: squashfs mount fail"; exec sh; }' 'echo "Squashfs mounted successfully"' 'mkdir -p /mnt/overlay' 'mount -t tmpfs tmpfs /mnt/overlay' 'mkdir -p /mnt/overlay/upper /mnt/overlay/work' 'echo "Mounting overlay..."' 'mkdir -p /newroot' 'mount -t overlay overlay -o lowerdir=/mnt/root,upperdir=/mnt/overlay/upper,workdir=/mnt/overlay/work /newroot || { echo "ERROR: overlay fail"; exec sh; }' 'echo "Overlay mounted"' '[ -x /newroot/init ] || { echo "ERROR: no init in newroot"; ls -la /newroot/; exec sh; }' 'echo "Switching to new root..."' 'umount /proc /sys /dev 2>/dev/null' 'exec switch_root /newroot /init' > "$ID/init"
           chmod +x "$ID/init"
           cd "$ID"
           find . | cpio -o -H newc | gzip > "$WS/initramfs.cpio.gz"
