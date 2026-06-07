@@ -135,101 +135,99 @@ jobs:
             # Alpine的内核配置通常在/boot下
             cp /tmp/alpine/boot/config-* .config 2>/dev/null || make defconfig
           fi
-          # 启用必要的选项 - FIRST DISABLE ALL DEBUG INFO
-          # Create a minimal .config by completely overriding it
-          cat > .config << 'ENDOFCONFIG'
-# Basic kernel settings
-CONFIG_64BIT=y
-CONFIG_X86_64=y
-CONFIG_SMP=y
-# Disable ALL debug info
-CONFIG_DEBUG_INFO=n
-CONFIG_DEBUG_INFO_NONE=n
-CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT=n
-CONFIG_DEBUG_INFO_DWARF4=n
-CONFIG_DEBUG_INFO_DWARF5=n
-CONFIG_DEBUG_INFO_BTF=n
-CONFIG_DEBUG_INFO_BTF_MODULES=n
-CONFIG_DEBUG_INFO_REDUCED=n
-CONFIG_DEBUG_INFO_SPLIT=n
-CONFIG_DEBUG_INFO_COMPRESSED=n
-CONFIG_DEBUG_KERNEL=n
-CONFIG_FRAME_POINTER=n
-CONFIG_KALLSYMS=n
-CONFIG_KALLSYMS_ALL=n
-CONFIG_STACK_VALIDATION=n
-CONFIG_GDB_SCRIPTS=n
-# Block devices
-CONFIG_BLK_DEV=y
-CONFIG_BLK_DEV_LOOP=y
-CONFIG_BLK_DEV_LOOP_MIN_COUNT=8
-# CDROM/SCSI support
-CONFIG_CDROM=y
-CONFIG_BLK_DEV_CDROM=y
-CONFIG_SCSI=y
-CONFIG_SCSI_CDROM=y
-CONFIG_SCSI_SR=y
-CONFIG_SCSI_SR_MOD=y
-CONFIG_SCSI=y
-CONFIG_ATA=y
-CONFIG_PATA_ACPI=y
-CONFIG_ATA_PIIX=y
-CONFIG_ATA_GENERIC=y
-CONFIG_ATAPI=y
-CONFIG_CDROM_PKTCDVD=y
-# File systems
-CONFIG_ISO9660_FS=y
-CONFIG_JOLIET=y
-CONFIG_SQUASHFS=y
-CONFIG_SQUASHFS_ZLIB=y
-CONFIG_SQUASHFS_LZMA=y
-CONFIG_SQUASHFS_XZ=y
-CONFIG_SQUASHFS_LZO=y
-CONFIG_SQUASHFS_LZ4=y
-CONFIG_SQUASHFS_ZSTD=y
-CONFIG_OVERLAY_FS=y
-CONFIG_OVERLAY_FS_INDEX=y
-CONFIG_OVERLAY_FS_REDIRECT_DIR=y
-CONFIG_OVERLAY_FS_METACOPY=y
-CONFIG_OVERLAY_FS_REDIRECT_ALWAYS_FOLLOW=y
-# Virtualization
-CONFIG_VIRTIO=y
-CONFIG_VIRTIO_PCI=y
-CONFIG_VIRTIO_BLK=y
-# Network
-CONFIG_VIRTIO_NET=m
-CONFIG_VMXNET3=m
-CONFIG_E1000=m
-CONFIG_NETDEVICES=y
-CONFIG_INET=y
-# Framebuffer/console
-CONFIG_FB=y
-CONFIG_FB_SIMPLE=y
-CONFIG_FB_CFB_FILLRECT=y
-CONFIG_FB_CFB_COPYAREA=y
-CONFIG_FB_CFB_IMAGEBLIT=y
-CONFIG_FB_SYS_FILLRECT=y
-CONFIG_FB_SYS_COPYAREA=y
-CONFIG_FB_SYS_IMAGEBLIT=y
-CONFIG_VESA_FB=y
-CONFIG_VGA_CONSOLE=y
-CONFIG_VGA_ARB=y
-CONFIG_DRM=y
-CONFIG_DRM_VGA16_FB=y
-# UEFI boot support
-CONFIG_EFI=y
-CONFIG_EFI_STUB=y
-CONFIG_EFI_VARS=y
-CONFIG_EFI_RUNTIME_MAP=y
-CONFIG_EFI_BOOTLOADER=y
-# Initramfs
-CONFIG_BLK_DEV_INITRD=y
-CONFIG_INITRAMFS_SOURCE=""
-# Disable unwanted features
-CONFIG_SOUND=n
-CONFIG_USB_SUPPORT=n
-CONFIG_WLAN=n
-ENDOFCONFIG
+          # 启用必要的选项 - 使用printf避免YAML语法问题
+          # 先清空.config，然后逐行写入
+          > .config
+          printf '# Basic kernel settings\n' >> .config
+          printf 'CONFIG_64BIT=y\n' >> .config
+          printf 'CONFIG_X86_64=y\n' >> .config
+          printf 'CONFIG_SMP=y\n' >> .config
+          # Disable ALL debug info
+          printf 'CONFIG_DEBUG_INFO=n\n' >> .config
+          printf 'CONFIG_DEBUG_INFO_NONE=n\n' >> .config
+          printf 'CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT=n\n' >> .config
+          printf 'CONFIG_DEBUG_INFO_DWARF4=n\n' >> .config
+          printf 'CONFIG_DEBUG_INFO_DWARF5=n\n' >> .config
+          printf 'CONFIG_DEBUG_INFO_BTF=n\n' >> .config
+          printf 'CONFIG_DEBUG_INFO_BTF_MODULES=n\n' >> .config
+          printf 'CONFIG_DEBUG_INFO_REDUCED=n\n' >> .config
+          printf 'CONFIG_DEBUG_INFO_SPLIT=n\n' >> .config
+          printf 'CONFIG_DEBUG_INFO_COMPRESSED=n\n' >> .config
+          printf 'CONFIG_DEBUG_KERNEL=n\n' >> .config
+          printf 'CONFIG_FRAME_POINTER=n\n' >> .config
+          printf 'CONFIG_KALLSYMS=n\n' >> .config
+          printf 'CONFIG_KALLSYMS_ALL=n\n' >> .config
+          printf 'CONFIG_STACK_VALIDATION=n\n' >> .config
+          printf 'CONFIG_GDB_SCRIPTS=n\n' >> .config
+          # Block devices
+          printf 'CONFIG_BLK_DEV=y\n' >> .config
+          printf 'CONFIG_BLK_DEV_LOOP=y\n' >> .config
+          printf 'CONFIG_BLK_DEV_LOOP_MIN_COUNT=8\n' >> .config
+          # CDROM/SCSI support
+          printf 'CONFIG_CDROM=y\n' >> .config
+          printf 'CONFIG_BLK_DEV_CDROM=y\n' >> .config
+          printf 'CONFIG_SCSI=y\n' >> .config
+          printf 'CONFIG_SCSI_CDROM=y\n' >> .config
+          printf 'CONFIG_SCSI_SR=y\n' >> .config
+          printf 'CONFIG_SCSI_SR_MOD=y\n' >> .config
+          printf 'CONFIG_ATA=y\n' >> .config
+          printf 'CONFIG_PATA_ACPI=y\n' >> .config
+          printf 'CONFIG_ATA_PIIX=y\n' >> .config
+          printf 'CONFIG_ATA_GENERIC=y\n' >> .config
+          printf 'CONFIG_ATAPI=y\n' >> .config
+          printf 'CONFIG_CDROM_PKTCDVD=y\n' >> .config
+          # File systems
+          printf 'CONFIG_ISO9660_FS=y\n' >> .config
+          printf 'CONFIG_JOLIET=y\n' >> .config
+          printf 'CONFIG_SQUASHFS=y\n' >> .config
+          printf 'CONFIG_SQUASHFS_ZLIB=y\n' >> .config
+          printf 'CONFIG_SQUASHFS_LZMA=y\n' >> .config
+          printf 'CONFIG_SQUASHFS_XZ=y\n' >> .config
+          printf 'CONFIG_SQUASHFS_LZO=y\n' >> .config
+          printf 'CONFIG_SQUASHFS_LZ4=y\n' >> .config
+          printf 'CONFIG_SQUASHFS_ZSTD=y\n' >> .config
+          printf 'CONFIG_OVERLAY_FS=y\n' >> .config
+          printf 'CONFIG_OVERLAY_FS_INDEX=y\n' >> .config
+          printf 'CONFIG_OVERLAY_FS_REDIRECT_DIR=y\n' >> .config
+          printf 'CONFIG_OVERLAY_FS_METACOPY=y\n' >> .config
+          printf 'CONFIG_OVERLAY_FS_REDIRECT_ALWAYS_FOLLOW=y\n' >> .config
+          # Virtualization
+          printf 'CONFIG_VIRTIO=y\n' >> .config
+          printf 'CONFIG_VIRTIO_PCI=y\n' >> .config
+          printf 'CONFIG_VIRTIO_BLK=y\n' >> .config
+          # Network
+          printf 'CONFIG_VIRTIO_NET=m\n' >> .config
+          printf 'CONFIG_VMXNET3=m\n' >> .config
+          printf 'CONFIG_E1000=m\n' >> .config
+          printf 'CONFIG_NETDEVICES=y\n' >> .config
+          printf 'CONFIG_INET=y\n' >> .config
+          # Framebuffer/console
+          printf 'CONFIG_FB=y\n' >> .config
+          printf 'CONFIG_FB_SIMPLE=y\n' >> .config
+          printf 'CONFIG_FB_CFB_FILLRECT=y\n' >> .config
+          printf 'CONFIG_FB_CFB_COPYAREA=y\n' >> .config
+          printf 'CONFIG_FB_CFB_IMAGEBLIT=y\n' >> .config
+          printf 'CONFIG_FB_SYS_FILLRECT=y\n' >> .config
+          printf 'CONFIG_FB_SYS_COPYAREA=y\n' >> .config
+          printf 'CONFIG_FB_SYS_IMAGEBLIT=y\n' >> .config
+          printf 'CONFIG_VESA_FB=y\n' >> .config
+          printf 'CONFIG_VGA_CONSOLE=y\n' >> .config
+          printf 'CONFIG_VGA_ARB=y\n' >> .config
+          printf 'CONFIG_DRM=y\n' >> .config
+          printf 'CONFIG_DRM_VGA16_FB=y\n' >> .config
+          # UEFI boot support
+          printf 'CONFIG_EFI=y\n' >> .config
+          printf 'CONFIG_EFI_STUB=y\n' >> .config
+          printf 'CONFIG_EFI_VARS=y\n' >> .config
+          printf 'CONFIG_EFI_RUNTIME_MAP=y\n' >> .config
+          printf 'CONFIG_EFI_BOOTLOADER=y\n' >> .config
+          # Initramfs
+          printf 'CONFIG_BLK_DEV_INITRD=y\n' >> .config
+          printf 'CONFIG_INITRAMFS_SOURCE=""\n' >> .config
+          # Disable unwanted features
+          printf 'CONFIG_SOUND=n\n' >> .config
+          printf 'CONFIG_USB_SUPPORT=n\n' >> .config
+          printf 'CONFIG_WLAN=n\n' >> .config
           # Now run olddefconfig to fill in all the missing defaults
           make olddefconfig
           # Double-check critical settings
