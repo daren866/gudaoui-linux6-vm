@@ -165,78 +165,68 @@ jobs:
           scripts/config --enable DRM
           scripts/config --enable DRM_VGA16_FB
           # Loop device support for squashfs mounting - MUST be built-in (not module)
-          for o in BLK_DEV_LOOP BLK_DEV_LOOP_MIN_COUNT; do
-            scripts/config --enable "$o"
-          done
-          # Add all required options directly to .config
-          cat >> .config << 'EOL'
-CONFIG_BLK_DEV_LOOP=y
-CONFIG_BLK_DEV_LOOP_MIN_COUNT=8
-CONFIG_SQUASHFS=y
-CONFIG_SQUASHFS_ZLIB=y
-CONFIG_SQUASHFS_LZMA=y
-CONFIG_SQUASHFS_XZ=y
-CONFIG_SQUASHFS_LZO=y
-CONFIG_SQUASHFS_LZ4=y
-CONFIG_SQUASHFS_ZSTD=y
-CONFIG_OVERLAY_FS=y
-CONFIG_OVERLAY_FS_INDEX=y
-CONFIG_OVERLAY_FS_REDIRECT_DIR=y
-CONFIG_OVERLAY_FS_METACOPY=y
-CONFIG_OVERLAY_FS_REDIRECT_ALWAYS_FOLLOW=y
-CONFIG_ISO9660_FS=y
-CONFIG_JOLIET=y
-CONFIG_EFI=y
-CONFIG_EFI_STUB=y
-CONFIG_EFI_VARS=y
-CONFIG_FB=y
-CONFIG_FB_SIMPLE=y
-CONFIG_FB_CFB_FILLRECT=y
-CONFIG_FB_CFB_COPYAREA=y
-CONFIG_FB_CFB_IMAGEBLIT=y
-CONFIG_FB_SYS_FILLRECT=y
-CONFIG_FB_SYS_COPYAREA=y
-CONFIG_FB_SYS_IMAGEBLIT=y
-CONFIG_VESA_FB=y
-CONFIG_VGA_CONSOLE=y
-CONFIG_VGA_ARB=y
-CONFIG_DRM=y
-CONFIG_DRM_VGA16_FB=y
-EOL
-          # Disable debug info to avoid dwarf.h issues
-          cat >> .config << 'EOL'
-CONFIG_DEBUG_INFO=n
-CONFIG_DEBUG_INFO_NONE=n
-CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT=n
-CONFIG_DEBUG_INFO_DWARF4=n
-CONFIG_DEBUG_INFO_DWARF5=n
-CONFIG_DEBUG_INFO_BTF=n
-CONFIG_DEBUG_INFO_BTF_MODULES=n
-CONFIG_DEBUG_INFO_REDUCED=n
-CONFIG_DEBUG_INFO_SPLIT=n
-CONFIG_DEBUG_INFO_COMPRESSED=n
-CONFIG_DEBUG_KERNEL=n
-CONFIG_FRAME_POINTER=n
-CONFIG_KALLSYMS=n
-CONFIG_KALLSYMS_ALL=n
-CONFIG_STACK_VALIDATION=n
-CONFIG_GDB_SCRIPTS=n
-EOL
-          make olddefconfig
+          # Add all required options directly to .config using printf
+          printf 'CONFIG_BLK_DEV_LOOP=y\n' >> .config
+          printf 'CONFIG_BLK_DEV_LOOP_MIN_COUNT=8\n' >> .config
+          printf 'CONFIG_SQUASHFS=y\n' >> .config
+          printf 'CONFIG_SQUASHFS_ZLIB=y\n' >> .config
+          printf 'CONFIG_SQUASHFS_LZMA=y\n' >> .config
+          printf 'CONFIG_SQUASHFS_XZ=y\n' >> .config
+          printf 'CONFIG_SQUASHFS_LZO=y\n' >> .config
+          printf 'CONFIG_SQUASHFS_LZ4=y\n' >> .config
+          printf 'CONFIG_SQUASHFS_ZSTD=y\n' >> .config
+          printf 'CONFIG_OVERLAY_FS=y\n' >> .config
+          printf 'CONFIG_OVERLAY_FS_INDEX=y\n' >> .config
+          printf 'CONFIG_OVERLAY_FS_REDIRECT_DIR=y\n' >> .config
+          printf 'CONFIG_OVERLAY_FS_METACOPY=y\n' >> .config
+          printf 'CONFIG_OVERLAY_FS_REDIRECT_ALWAYS_FOLLOW=y\n' >> .config
+          printf 'CONFIG_ISO9660_FS=y\n' >> .config
+          printf 'CONFIG_JOLIET=y\n' >> .config
+          printf 'CONFIG_EFI=y\n' >> .config
+          printf 'CONFIG_EFI_STUB=y\n' >> .config
+          printf 'CONFIG_EFI_VARS=y\n' >> .config
+          printf 'CONFIG_FB=y\n' >> .config
+          printf 'CONFIG_FB_SIMPLE=y\n' >> .config
+          printf 'CONFIG_FB_CFB_FILLRECT=y\n' >> .config
+          printf 'CONFIG_FB_CFB_COPYAREA=y\n' >> .config
+          printf 'CONFIG_FB_CFB_IMAGEBLIT=y\n' >> .config
+          printf 'CONFIG_FB_SYS_FILLRECT=y\n' >> .config
+          printf 'CONFIG_FB_SYS_COPYAREA=y\n' >> .config
+          printf 'CONFIG_FB_SYS_IMAGEBLIT=y\n' >> .config
+          printf 'CONFIG_VESA_FB=y\n' >> .config
+          printf 'CONFIG_VGA_CONSOLE=y\n' >> .config
+          printf 'CONFIG_VGA_ARB=y\n' >> .config
+          printf 'CONFIG_DRM=y\n' >> .config
+          printf 'CONFIG_DRM_VGA16_FB=y\n' >> .config
+          # Disable debug info
+          printf 'CONFIG_DEBUG_INFO=n\n' >> .config
+          printf 'CONFIG_DEBUG_INFO_NONE=n\n' >> .config
+          printf 'CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT=n\n' >> .config
+          printf 'CONFIG_DEBUG_INFO_DWARF4=n\n' >> .config
+          printf 'CONFIG_DEBUG_INFO_DWARF5=n\n' >> .config
+          printf 'CONFIG_DEBUG_INFO_BTF=n\n' >> .config
+          printf 'CONFIG_DEBUG_INFO_BTF_MODULES=n\n' >> .config
+          printf 'CONFIG_DEBUG_INFO_REDUCED=n\n' >> .config
+          printf 'CONFIG_DEBUG_INFO_SPLIT=n\n' >> .config
+          printf 'CONFIG_DEBUG_INFO_COMPRESSED=n\n' >> .config
+          printf 'CONFIG_DEBUG_KERNEL=n\n' >> .config
+          printf 'CONFIG_FRAME_POINTER=n\n' >> .config
+          printf 'CONFIG_KALLSYMS=n\n' >> .config
+          printf 'CONFIG_KALLSYMS_ALL=n\n' >> .config
+          printf 'CONFIG_STACK_VALIDATION=n\n' >> .config
+          printf 'CONFIG_GDB_SCRIPTS=n\n' >> .config
           # Add CD-ROM and storage driver support
-          cat >> .config << 'EOL'
-CONFIG_ATA=y
-CONFIG_PATA_ACPI=y
-CONFIG_ATA_PIIX=y
-CONFIG_ATA_GENERIC=y
-CONFIG_ATAPI=y
-CONFIG_SCSI_CDROM=y
-CONFIG_BLK_DEV_CDROM=y
-CONFIG_CDROM_PKTCDVD=y
-CONFIG_SOUND=n
-CONFIG_USB_SUPPORT=n
-CONFIG_WLAN=n
-EOL
+          printf 'CONFIG_ATA=y\n' >> .config
+          printf 'CONFIG_PATA_ACPI=y\n' >> .config
+          printf 'CONFIG_ATA_PIIX=y\n' >> .config
+          printf 'CONFIG_ATA_GENERIC=y\n' >> .config
+          printf 'CONFIG_ATAPI=y\n' >> .config
+          printf 'CONFIG_SCSI_CDROM=y\n' >> .config
+          printf 'CONFIG_BLK_DEV_CDROM=y\n' >> .config
+          printf 'CONFIG_CDROM_PKTCDVD=y\n' >> .config
+          printf 'CONFIG_SOUND=n\n' >> .config
+          printf 'CONFIG_USB_SUPPORT=n\n' >> .config
+          printf 'CONFIG_WLAN=n\n' >> .config
           make olddefconfig
 
       - name: Force modules
