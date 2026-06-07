@@ -353,6 +353,12 @@ jobs:
           ls -la "$R/lib/" 2>/dev/null | head -20 || echo "No libraries in /lib"
           ls -la "$R/lib64/" 2>/dev/null | head -10 || echo "No libraries in /lib64"
           echo "Base libraries installed successfully"
+          # Install ldd command
+          if [ -x /usr/bin/ldd ]; then
+            cp /usr/bin/ldd "$R/usr/bin/ldd"
+            chmod +x "$R/usr/bin/ldd"
+            echo "ldd command installed"
+          fi
 
       - name: Create rootfs
         run: |
