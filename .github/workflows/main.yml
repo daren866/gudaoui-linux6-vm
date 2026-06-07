@@ -198,7 +198,17 @@ jobs:
           printf 'CONFIG_VGA_ARB=y\n' >> .config
           printf 'CONFIG_DRM=y\n' >> .config
           printf 'CONFIG_DRM_VGA16_FB=y\n' >> .config
-          # Disable debug info
+          printf 'CONFIG_ATA=y\n' >> .config
+          printf 'CONFIG_PATA_ACPI=y\n' >> .config
+          printf 'CONFIG_ATA_PIIX=y\n' >> .config
+          printf 'CONFIG_ATA_GENERIC=y\n' >> .config
+          printf 'CONFIG_ATAPI=y\n' >> .config
+          printf 'CONFIG_SCSI_CDROM=y\n' >> .config
+          printf 'CONFIG_BLK_DEV_CDROM=y\n' >> .config
+          printf 'CONFIG_CDROM_PKTCDVD=y\n' >> .config
+          printf 'CONFIG_SOUND=n\n' >> .config
+          printf 'CONFIG_USB_SUPPORT=n\n' >> .config
+          printf 'CONFIG_WLAN=n\n' >> .config
           printf 'CONFIG_DEBUG_INFO=n\n' >> .config
           printf 'CONFIG_DEBUG_INFO_NONE=n\n' >> .config
           printf 'CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT=n\n' >> .config
@@ -215,19 +225,17 @@ jobs:
           printf 'CONFIG_KALLSYMS_ALL=n\n' >> .config
           printf 'CONFIG_STACK_VALIDATION=n\n' >> .config
           printf 'CONFIG_GDB_SCRIPTS=n\n' >> .config
-          # Add CD-ROM and storage driver support
-          printf 'CONFIG_ATA=y\n' >> .config
-          printf 'CONFIG_PATA_ACPI=y\n' >> .config
-          printf 'CONFIG_ATA_PIIX=y\n' >> .config
-          printf 'CONFIG_ATA_GENERIC=y\n' >> .config
-          printf 'CONFIG_ATAPI=y\n' >> .config
-          printf 'CONFIG_SCSI_CDROM=y\n' >> .config
-          printf 'CONFIG_BLK_DEV_CDROM=y\n' >> .config
-          printf 'CONFIG_CDROM_PKTCDVD=y\n' >> .config
-          printf 'CONFIG_SOUND=n\n' >> .config
-          printf 'CONFIG_USB_SUPPORT=n\n' >> .config
-          printf 'CONFIG_WLAN=n\n' >> .config
+          # Run olddefconfig to resolve dependencies
           make olddefconfig
+          # FORCE squashfs and loop to be built-in after olddefconfig
+          sed -i 's/^CONFIG_SQUASHFS=.*/CONFIG_SQUASHFS=y/' .config
+          sed -i 's/^CONFIG_BLK_DEV_LOOP=.*/CONFIG_BLK_DEV_LOOP=y/' .config
+          sed -i 's/^CONFIG_OVERLAY_FS=.*/CONFIG_OVERLAY_FS=y/' .config
+          # Verify the settings
+          echo "=== Final kernel config verification ==="
+          grep "^CONFIG_SQUASHFS=" .config
+          grep "^CONFIG_BLK_DEV_LOOP=" .config
+          grep "^CONFIG_OVERLAY_FS=" .config
 
       - name: Force modules
         run: |
