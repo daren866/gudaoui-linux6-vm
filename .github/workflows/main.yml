@@ -231,7 +231,8 @@ jobs:
           else
             echo "=== Creating modules tarball ==="
             mkdir -p ../modules-install
-            make modules_install INSTALL_MOD_PATH=../modules-install
+            # modules_install 也使用多核加速
+            make -j"$(nproc)" modules_install INSTALL_MOD_PATH=../modules-install
             cd ../modules-install
             tar -czf ../linux-alpine/modules.tar.gz lib
             cd ../linux-alpine
