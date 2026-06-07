@@ -183,6 +183,12 @@ jobs:
           printf 'CONFIG_ATA_GENERIC=y\n' >> .config
           printf 'CONFIG_ATAPI=y\n' >> .config
           printf 'CONFIG_CDROM_PKTCDVD=y\n' >> .config
+          # AHCI SATA support (modern CD/DVD drives)
+          printf 'CONFIG_SATA_AHCI=y\n' >> .config
+          printf 'CONFIG_SATA_AHCI_PLATFORM=y\n' >> .config
+          printf 'CONFIG_ATA_SFF=y\n' >> .config
+          printf 'CONFIG_ATA_BMDMA=y\n' >> .config
+          printf 'CONFIG_PATA_LEGACY=y\n' >> .config
           # NVMe support
           printf 'CONFIG_NVME_CORE=y\n' >> .config
           printf 'CONFIG_NVME_FABRICS=y\n' >> .config
