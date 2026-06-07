@@ -312,18 +312,27 @@ jobs:
           R="$WS/rootfs"
           echo "=== Installing common Linux base libraries ==="
           sudo apt-get update
+          # 系统基础 & 编译依赖
           sudo apt-get install -y \
-            libc6 libstdc++6 libgcc-s1 libmbedtls-dev \
-            libmbedcrypto3 libmbedx509-3 \
-            zlib1g libzstd1 liblzma5 libbz2-1.0 \
-            libncurses6 libtinfo6 libncursesw6 \
-            libssl3 libcrypto++6 libgmp10 libmpdec3 \
+            libc6 libstdc++6 libgcc-s1 \
+            libmbedtls-dev libmbedcrypto3 libmbedx509-3 \
+            # 压缩归档库
+            zlib1g libzstd1 liblzma5 libbz2-1.0 liblz4-1 \
+            # 网络通信库
+            libssl3 libcrypto3 libcurl4 \
+            # 数据解析库
+            libjson-c3 libxml2 libyaml-0-2 \
+            # 终端/UI库
+            libncurses6 libtinfo6 libx11-6 libxext6 libxmu6 \
+            libxt6 libsm6 libice6 \
+            # 系统工具库
             libdbus-1-3 libsystemd0 libudev1 \
-            libselinux1 libsepol1 libacl1 libattr1 \
-            libcap2 libpcre3 libffi7 libblkid1 libuuid1 \
-            libsmartcols1 libfdisk1 libkmod2 \
-            libdw1 libelf1 libaudit1 liblz4-1
-          DEB_PKGS="libc6 libstdc++6 libgcc-s1 zlib1g libzstd1 liblzma5 libbz2-1.0 libncurses6 libtinfo6 libssl3 libdbus-1-3 libsystemd0 libudev1 libselinux1 libacl1 libattr1 libcap2 libpcre3 libffi7 libblkid1 libuuid1 libsmartcols1 libkmod2 libdw1 libelf1 libaudit1 liblz4-1"
+            libpam0g libselinux1 libsepol1 libaudit1 libcap2 \
+            libpcre3 libffi7 libacl1 libattr1 \
+            libblkid1 libuuid1 libsmartcols1 libkmod2 \
+            libdw1 libelf1 libmpdec3 libgmp10
+          # 提取库文件到rootfs
+          DEB_PKGS="libc6 libstdc++6 libgcc-s1 libmbedtls-dev libmbedcrypto3 libmbedx509-3 zlib1g libzstd1 liblzma5 libbz2-1.0 liblz4-1 libssl3 libcrypto3 libcurl4 libjson-c3 libxml2 libyaml-0-2 libncurses6 libtinfo6 libx11-6 libxext6 libxmu6 libxt6 libsm6 libice6 libdbus-1-3 libsystemd0 libudev1 libpam0g libselinux1 libsepol1 libaudit1 libcap2 libpcre3 libffi7 libacl1 libattr1 libblkid1 libuuid1 libsmartcols1 libkmod2 libdw1 libelf1 libmpdec3 libgmp10"
           mkdir -p "$R/lib" "$R/lib64" "$R/usr/lib"
           for pkg in $DEB_PKGS; do
             for deb in $(find /var/cache/apt/archives -name "${pkg}_*.deb" 2>/dev/null); do
@@ -335,12 +344,20 @@ jobs:
             cp -a /tmp/base-libs-extract/lib/* "$R/lib/" 2>/dev/null || true
             cp -a /tmp/base-libs-extract/lib64/* "$R/lib64/" 2>/dev/null || true
             cp -a /tmp/base-libs-extract/usr/lib/* "$R/usr/lib/" 2>/dev/null || true
+            # 处理 x86_64-linux-gnu 子目录
+            if [ -d /tmp/base-libs-extract/usr/lib/x86_64-linux-gnu ]; then
+              cp -a /tmp/base-libs-extract/usr/lib/x86_64-linux-gnu/* "$R/usr/lib/" 2>/dev/null || true
+            fi
             rm -rf /tmp/base-libs-extract
+          fi
+          # 重建ld.so.cache
+          if [ -x "$R/sbin/ldconfig" ] || [ -x "$R/usr/sbin/ldconfig" ]; then
+            sudo chroot "$R" /usr/sbin/ldconfig 2>/dev/null || true
           fi
           echo "=== Checking installed libraries ==="
           ls -la "$R/lib/" 2>/dev/null | head -20 || echo "No libraries in /lib"
           ls -la "$R/lib64/" 2>/dev/null | head -10 || echo "No libraries in /lib64"
-          echo "Base libraries installed"
+          echo "Base libraries installed successfully"
 
       - name: Create rootfs
         run: |
