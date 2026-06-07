@@ -57,19 +57,17 @@ jobs:
           echo "iso_name=$I" >> "$GITHUB_OUTPUT"
           echo "RELEASE_TITLE=$T" >> "$GITHUB_ENV"
           echo "ISO_NAME=$I" >> "$GITHUB_ENV"
-
       - name: Cache kernel
         uses: actions/cache@v4
         id: kernel-cache
         with:
-          path: linux-alpine
+          path: linux-6.18
           key: >-
-            kernel-alpine-6.6.30-${{
+            kernel-6.18-${{
               hashFiles('6.18.x-x86_64-build.conf')
             }}
           restore-keys: |
-            kernel-alpine-6.6.30-
-
+            kernel-6.18-
       - name: Cache busybox
         uses: actions/cache@v4
         id: busybox-cache
@@ -83,7 +81,6 @@ jobs:
             }}
           restore-keys: |
             busybox-1.36.1-v2-normal-
-
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -91,172 +88,40 @@ jobs:
             build-essential libncurses-dev bison flex \
             libssl-dev libelf-dev bc wget cpio xorriso \
             grub-pc-bin grub-common mtools dosfstools \
-            git pkg-config squashfs-tools libmbedtls-dev \
-            libdwarf-dev dwarves
-
-      - name: Download Alpine Linux kernel
+            git pkg-config squashfs-tools libmbedtls-dev
+      - name: Download kernel
         if: steps.kernel-cache.outputs.cache-hit != 'true'
         run: |
-          echo "=== Downloading Alpine Linux kernel source ==="
-          # 从Alpine Linux获取稳定版内核源码
-          wget -q https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/x86_64/alpine-minirootfs-3.20.0-x86_64.tar.gz -O alpine-rootfs.tar.gz
-          # 获取Alpine Linux内核源码包
-          apk_url="https://dl-cdn.alpinelinux.org/alpine/v3.20/main/x86_64/"
-          # 下载linux-virt内核（Alpine专为虚拟机优化的内核）
-          wget -q "${apk_url}linux-virt-6.6.30-r0.apk" -O linux-virt.apk || true
-          # 如果没有预编译包，则下载官方内核源码
-          if [ ! -f linux-virt.apk ] || [ ! -s linux-virt.apk ]; then
-            echo "Downloading kernel source from kernel.org..."
-            wget -q https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.6.30.tar.xz -O linux.tar.xz
-            tar -xf linux.tar.xz
-            mv linux-6.6.30 linux-alpine
-          else
-            # 解压apk包获取内核
-            mkdir -p linux-alpine
-            tar -xzf linux-virt.apk -C linux-alpine || true
-            # 如果apk包含源码，使用它；否则下载官方源码
-            if [ ! -f linux-alpine/boot/vmlinuz-virt ]; then
-              wget -q https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.6.30.tar.xz -O linux.tar.xz
-              tar -xf linux.tar.xz
-              mv linux-6.6.30 linux-alpine
-            fi
-          fi
-          ls -la linux-alpine
-
+          wget -q https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.tar.xz
+          tar -xf linux-6.18.tar.xz
       - name: Configure kernel
         run: |
-          cd linux-alpine
-          # 使用Alpine Linux默认配置（专为虚拟机优化）
-          make defconfig
-          # 如果有Alpine配置文件，使用它
-          if [ -f ../alpine-rootfs.tar.gz ]; then
-            mkdir -p /tmp/alpine
-            tar -xzf ../alpine-rootfs.tar.gz -C /tmp/alpine
-            # Alpine的内核配置通常在/boot下
-            cp /tmp/alpine/boot/config-* .config 2>/dev/null || make defconfig
-          fi
-          # 启用必要的选项 - 使用printf避免YAML语法问题
-          # 先清空.config，然后逐行写入
-          > .config
-          printf '# Basic kernel settings\n' >> .config
-          printf 'CONFIG_64BIT=y\n' >> .config
-          printf 'CONFIG_X86_64=y\n' >> .config
-          printf 'CONFIG_SMP=y\n' >> .config
-          # Disable ALL debug info
-          printf 'CONFIG_DEBUG_INFO=n\n' >> .config
-          printf 'CONFIG_DEBUG_INFO_NONE=n\n' >> .config
-          printf 'CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT=n\n' >> .config
-          printf 'CONFIG_DEBUG_INFO_DWARF4=n\n' >> .config
-          printf 'CONFIG_DEBUG_INFO_DWARF5=n\n' >> .config
-          printf 'CONFIG_DEBUG_INFO_BTF=n\n' >> .config
-          printf 'CONFIG_DEBUG_INFO_BTF_MODULES=n\n' >> .config
-          printf 'CONFIG_DEBUG_INFO_REDUCED=n\n' >> .config
-          printf 'CONFIG_DEBUG_INFO_SPLIT=n\n' >> .config
-          printf 'CONFIG_DEBUG_INFO_COMPRESSED=n\n' >> .config
-          printf 'CONFIG_DEBUG_KERNEL=n\n' >> .config
-          printf 'CONFIG_FRAME_POINTER=n\n' >> .config
-          printf 'CONFIG_KALLSYMS=n\n' >> .config
-          printf 'CONFIG_KALLSYMS_ALL=n\n' >> .config
-          printf 'CONFIG_STACK_VALIDATION=n\n' >> .config
-          printf 'CONFIG_GDB_SCRIPTS=n\n' >> .config
-          # Block devices
-          printf 'CONFIG_BLK_DEV=y\n' >> .config
-          printf 'CONFIG_BLK_DEV_LOOP=y\n' >> .config
-          printf 'CONFIG_BLK_DEV_LOOP_MIN_COUNT=8\n' >> .config
-          # CDROM/SCSI support
-          printf 'CONFIG_CDROM=y\n' >> .config
-          printf 'CONFIG_BLK_DEV_CDROM=y\n' >> .config
-          printf 'CONFIG_SCSI=y\n' >> .config
-          printf 'CONFIG_SCSI_CDROM=y\n' >> .config
-          printf 'CONFIG_SCSI_SR=y\n' >> .config
-          printf 'CONFIG_SCSI_SR_MOD=y\n' >> .config
-          # SCSI controller drivers for VMs
-          printf 'CONFIG_SCSI_VMWARE_PVSCSI=y\n' >> .config
-          printf 'CONFIG_SCSI_LSI_LOGIC=y\n' >> .config
-          printf 'CONFIG_SCSI_LSI_SAS=y\n' >> .config
-          printf 'CONFIG_SCSI_MEGARAID_SAS=y\n' >> .config
-          printf 'CONFIG_SCSI_BUSLOGIC=y\n' >> .config
-          # ATA support
-          printf 'CONFIG_ATA=y\n' >> .config
-          printf 'CONFIG_PATA_ACPI=y\n' >> .config
-          printf 'CONFIG_ATA_PIIX=y\n' >> .config
-          printf 'CONFIG_ATA_GENERIC=y\n' >> .config
-          printf 'CONFIG_ATAPI=y\n' >> .config
-          printf 'CONFIG_CDROM_PKTCDVD=y\n' >> .config
-          # AHCI SATA support (modern CD/DVD drives)
-          printf 'CONFIG_SATA_AHCI=y\n' >> .config
-          printf 'CONFIG_SATA_AHCI_PLATFORM=y\n' >> .config
-          printf 'CONFIG_ATA_SFF=y\n' >> .config
-          printf 'CONFIG_ATA_BMDMA=y\n' >> .config
-          printf 'CONFIG_PATA_LEGACY=y\n' >> .config
-          # NVMe support
-          printf 'CONFIG_NVME_CORE=y\n' >> .config
-          printf 'CONFIG_NVME_FABRICS=y\n' >> .config
-          printf 'CONFIG_BLK_DEV_NVME=y\n' >> .config
-          # Virtio block device (for QEMU/KVM)
-          printf 'CONFIG_VIRTIO_BLK=y\n' >> .config
-          printf 'CONFIG_VIRTIO_PCI=y\n' >> .config
-          # File systems
-          printf 'CONFIG_ISO9660_FS=y\n' >> .config
-          printf 'CONFIG_JOLIET=y\n' >> .config
-          printf 'CONFIG_SQUASHFS=y\n' >> .config
-          printf 'CONFIG_SQUASHFS_ZLIB=y\n' >> .config
-          printf 'CONFIG_SQUASHFS_LZMA=y\n' >> .config
-          printf 'CONFIG_SQUASHFS_XZ=y\n' >> .config
-          printf 'CONFIG_SQUASHFS_LZO=y\n' >> .config
-          printf 'CONFIG_SQUASHFS_LZ4=y\n' >> .config
-          printf 'CONFIG_SQUASHFS_ZSTD=y\n' >> .config
-          printf 'CONFIG_OVERLAY_FS=y\n' >> .config
-          printf 'CONFIG_OVERLAY_FS_INDEX=y\n' >> .config
-          printf 'CONFIG_OVERLAY_FS_REDIRECT_DIR=y\n' >> .config
-          printf 'CONFIG_OVERLAY_FS_METACOPY=y\n' >> .config
-          printf 'CONFIG_OVERLAY_FS_REDIRECT_ALWAYS_FOLLOW=y\n' >> .config
-          # Virtualization
-          printf 'CONFIG_VIRTIO=y\n' >> .config
-          printf 'CONFIG_VIRTIO_PCI=y\n' >> .config
-          printf 'CONFIG_VIRTIO_BLK=y\n' >> .config
-          # Network
-          printf 'CONFIG_VIRTIO_NET=m\n' >> .config
-          printf 'CONFIG_VMXNET3=m\n' >> .config
-          printf 'CONFIG_E1000=m\n' >> .config
-          printf 'CONFIG_NETDEVICES=y\n' >> .config
-          printf 'CONFIG_INET=y\n' >> .config
-          # Framebuffer/console
-          printf 'CONFIG_FB=y\n' >> .config
-          printf 'CONFIG_FB_SIMPLE=y\n' >> .config
-          printf 'CONFIG_FB_CFB_FILLRECT=y\n' >> .config
-          printf 'CONFIG_FB_CFB_COPYAREA=y\n' >> .config
-          printf 'CONFIG_FB_CFB_IMAGEBLIT=y\n' >> .config
-          printf 'CONFIG_FB_SYS_FILLRECT=y\n' >> .config
-          printf 'CONFIG_FB_SYS_COPYAREA=y\n' >> .config
-          printf 'CONFIG_FB_SYS_IMAGEBLIT=y\n' >> .config
-          printf 'CONFIG_VESA_FB=y\n' >> .config
-          printf 'CONFIG_VGA_CONSOLE=y\n' >> .config
-          printf 'CONFIG_VGA_ARB=y\n' >> .config
-          printf 'CONFIG_DRM=y\n' >> .config
-          printf 'CONFIG_DRM_VGA16_FB=y\n' >> .config
-          # UEFI boot support
-          printf 'CONFIG_EFI=y\n' >> .config
-          printf 'CONFIG_EFI_STUB=y\n' >> .config
-          printf 'CONFIG_EFI_VARS=y\n' >> .config
-          printf 'CONFIG_EFI_RUNTIME_MAP=y\n' >> .config
-          printf 'CONFIG_EFI_BOOTLOADER=y\n' >> .config
-          # Initramfs
-          printf 'CONFIG_BLK_DEV_INITRD=y\n' >> .config
-          printf 'CONFIG_INITRAMFS_SOURCE=""\n' >> .config
-          # Disable unwanted features
-          printf 'CONFIG_SOUND=n\n' >> .config
-          printf 'CONFIG_USB_SUPPORT=n\n' >> .config
-          printf 'CONFIG_WLAN=n\n' >> .config
-          # Now run olddefconfig to fill in all the missing defaults
+          cd linux-6.18
+          wget -q -O .config.original \
+            https://raw.githubusercontent.com/puppylinux-woof-CE/woof-CE/testing/kernel-kit/configs_x86_64/DOTconfig-6.18.1-x86_64 \
+            || true
+          [ -f .config.original ] \
+            && cp .config.original .config \
+            || make defconfig
+          for o in VIRTIO VIRTIO_PCI VIRTIO_BLK; do
+            scripts/config --enable "$o"
+          done
+          for o in VIRTIO_NET VMXNET3 E1000 PCNET32 \
+            8139CP 8139TOO E100 NE2K_PCI \
+            FAILOVER NET_FAILOVER; do
+            scripts/config --module "$o"
+          done
+          for o in PACKET UNIX INET IP_PNP IP_PNP_DHCP \
+            NETDEVICES NET_CORE ACPI ACPI_BUTTON; do
+            scripts/config --enable "$o"
+          done
+          for o in SOUND USB_SUPPORT WLAN; do
+            scripts/config --disable "$o"
+          done
           make olddefconfig
-          # Double-check critical settings
-          echo "=== VERIFYING CRITICAL KERNEL SETTINGS ==="
-          grep -E "^CONFIG_(SQUASHFS|BLK_DEV_LOOP|OVERLAY_FS|SCSI_CDROM|ISO9660_FS)=" .config
-
       - name: Force modules
         run: |
-          cd linux-alpine
+          cd linux-6.18
           for o in FAILOVER NET_FAILOVER \
             VIRTIO_NET VMXNET3; do
             sed -i "s/^CONFIG_${o}=.*/CONFIG_${o}=m/" .config
@@ -264,66 +129,64 @@ jobs:
               || echo "CONFIG_${o}=m" >> .config
           done
           make olddefconfig
-
       - name: Build kernel
         run: |
-          cd linux-alpine
+          cd linux-6.18
           HIT="${{ steps.kernel-cache.outputs.cache-hit }}"
           if [ -f arch/x86/boot/bzImage ] \
             && [ "$HIT" = "true" ]; then
             echo "Using cached kernel"
           else
             S=$(date +%s)
-            echo "=== Building kernel with $(nproc) cores ==="
-            # 直接编译内核，不使用deb-pkg
             make -j"$(nproc)" bzImage
-            make -j"$(nproc)" modules
             echo "Built in $(( ($(date +%s)-S)/60 )) min"
           fi
           ls -lh arch/x86/boot/bzImage
-
-      - name: Build modules tarball
+      - name: Build modules
         run: |
-          WS="$GITHUB_WORKSPACE"
-          cd "$WS/linux-alpine"
+          cd linux-6.18
           if [ -f modules.tar.gz ]; then
             echo "Modules exist, skipping"
           else
-            echo "=== Creating modules tarball ==="
+            S=$(date +%s)
+            make modules_prepare
+            make -j"$(nproc)" modules
+            make modules.builtin 2>/dev/null || true
             mkdir -p ../modules-install
-            # modules_install 也使用多核加速
-            make -j"$(nproc)" modules_install INSTALL_MOD_PATH=../modules-install
+            make modules_install \
+              INSTALL_MOD_PATH=../modules-install
+            KVER=$(ls ../modules-install/lib/modules/ \
+              | head -1)
+            cp modules.builtin \
+              "../modules-install/lib/modules/${KVER}/" \
+              2>/dev/null || true
             cd ../modules-install
-            tar -czf ../linux-alpine/modules.tar.gz lib
-            cd ../linux-alpine
+            tar -czf ../linux-6.18/modules.tar.gz lib
+            cd ../linux-6.18
             rm -rf ../modules-install
+            echo "Built in $(( ($(date +%s)-S)/60 )) min"
           fi
           du -h modules.tar.gz
-
       - name: Download BusyBox
         if: steps.busybox-cache.outputs.cache-hit != 'true'
         run: |
           wget -q https://busybox.net/downloads/busybox-1.36.1.tar.bz2
           tar -xf busybox-1.36.1.tar.bz2
-
       - name: Configure BusyBox
         run: |
           echo "=== Step 1: defconfig ==="
           cd busybox-1.36.1
           rm -f .config
           make defconfig
-
           echo "=== Step 2: shell settings ==="
           sed -i 's/# CONFIG_ASH is not set/CONFIG_ASH=y/' .config || true
           sed -i 's/# CONFIG_SH is not set/CONFIG_SH=y/' .config || true
           sed -i 's/# CONFIG_ASH_MATH_SUPPORT is not set/CONFIG_ASH_MATH_SUPPORT=y/' .config || true
           sed -i 's/# CONFIG_ASH_MATH_SUPPORT_64 is not set/CONFIG_ASH_MATH_SUPPORT_64=y/' .config || true
-
           echo "=== Step 3: power ==="
           sed -i 's/# CONFIG_REBOOT is not set/CONFIG_REBOOT=y/' .config || true
           sed -i 's/# CONFIG_HALT is not set/CONFIG_HALT=y/' .config || true
           sed -i 's/# CONFIG_POWEROFF is not set/CONFIG_POWEROFF=y/' .config || true
-
           echo "=== Step 4: network ==="
           sed -i 's/# CONFIG_UDHCPC is not set/CONFIG_UDHCPC=y/' .config || true
           sed -i 's/# CONFIG_IFCONFIG is not set/CONFIG_IFCONFIG=y/' .config || true
@@ -334,7 +197,6 @@ jobs:
           sed -i 's/# CONFIG_IPROUTE is not set/CONFIG_IPROUTE=y/' .config || true
           sed -i 's/# CONFIG_IPTUNNEL is not set/CONFIG_IPTUNNEL=y/' .config || true
           sed -i 's/# CONFIG_IPNEIGH is not set/CONFIG_IPNEIGH=y/' .config || true
-
           echo "=== Step 5: essential applets ==="
           for A in \
             STATIC \
@@ -358,16 +220,13 @@ jobs:
             grep -q "^CONFIG_${A}=y" .config \
               || echo "CONFIG_${A}=y" >> .config
           done
-
           echo "=== Step 6: remove TC ==="
           sed -i 's/^CONFIG_TC=y/# CONFIG_TC is not set/' .config 2>/dev/null || true
-
           echo "=== Step 7: force STATIC=y (final) ==="
           sed -i 's/^CONFIG_STATIC=n/CONFIG_STATIC=y/' .config || true
           sed -i 's/^# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config || true
           grep -q "^CONFIG_STATIC=y" .config \
             || echo "CONFIG_STATIC=y" >> .config
-
           echo "=== Step 8: verify ==="
           FAIL=0
           for A in STATIC CUT HEAD TAIL TR EXPR TTY \
@@ -386,7 +245,6 @@ jobs:
             exit 1
           fi
           echo "=== Configure BusyBox DONE ==="
-
       - name: Build BusyBox
         run: |
           cd busybox-1.36.1
@@ -405,7 +263,6 @@ jobs:
           echo "=== Verifying busybox applets ==="
           ./busybox --list | grep -E "^(cut|tr|grep|sed|awk|head|tail|ip|udhcpc)$" || echo "Some applets missing!"
           ./busybox --list-full | head -20
-
       - name: Build MicroPython
         run: |
           mkdir -p python-root/usr/local/bin python-root/home
@@ -449,6 +306,41 @@ jobs:
           ln -sf micropython python3
           cd "$GITHUB_WORKSPACE"
           du -h python-root/usr/local/bin/micropython
+      - name: Install common Linux base libraries
+        run: |
+          WS="$GITHUB_WORKSPACE"
+          R="$WS/rootfs"
+          echo "=== Installing common Linux base libraries ==="
+          sudo apt-get update
+          sudo apt-get install -y \
+            libc6 libstdc++6 libgcc-s1 libmbedtls-dev \
+            libmbedcrypto3 libmbedx509-3 \
+            zlib1g libzstd1 liblzma5 libbz2-1.0 \
+            libncurses6 libtinfo6 libncursesw6 \
+            libssl3 libcrypto++6 libgmp10 libmpdec3 \
+            libdbus-1-3 libsystemd0 libudev1 \
+            libselinux1 libsepol1 libacl1 libattr1 \
+            libcap2 libpcre3 libffi7 libblkid1 libuuid1 \
+            libsmartcols1 libfdisk1 libkmod2 \
+            libdw1 libelf1 libaudit1 liblz4-1
+          DEB_PKGS="libc6 libstdc++6 libgcc-s1 zlib1g libzstd1 liblzma5 libbz2-1.0 libncurses6 libtinfo6 libssl3 libdbus-1-3 libsystemd0 libudev1 libselinux1 libacl1 libattr1 libcap2 libpcre3 libffi7 libblkid1 libuuid1 libsmartcols1 libkmod2 libdw1 libelf1 libaudit1 liblz4-1"
+          mkdir -p "$R/lib" "$R/lib64" "$R/usr/lib"
+          for pkg in $DEB_PKGS; do
+            for deb in $(find /var/cache/apt/archives -name "${pkg}_*.deb" 2>/dev/null); do
+              echo "Extracting: $deb"
+              dpkg-deb -x "$deb" /tmp/base-libs-extract 2>/dev/null || true
+            done
+          done
+          if [ -d /tmp/base-libs-extract ]; then
+            cp -a /tmp/base-libs-extract/lib/* "$R/lib/" 2>/dev/null || true
+            cp -a /tmp/base-libs-extract/lib64/* "$R/lib64/" 2>/dev/null || true
+            cp -a /tmp/base-libs-extract/usr/lib/* "$R/usr/lib/" 2>/dev/null || true
+            rm -rf /tmp/base-libs-extract
+          fi
+          echo "=== Checking installed libraries ==="
+          ls -la "$R/lib/" 2>/dev/null | head -20 || echo "No libraries in /lib"
+          ls -la "$R/lib64/" 2>/dev/null | head -10 || echo "No libraries in /lib64"
+          echo "Base libraries installed"
 
       - name: Create rootfs
         run: |
@@ -485,10 +377,8 @@ jobs:
           fi
           cd "$WS"
           cp -a "$WS/python-root/"* "$R/"
-
-          [ -f "$WS/linux-alpine/modules.tar.gz" ] \
-            && tar -xzf "$WS/linux-alpine/modules.tar.gz" -C "$R/"
-
+          [ -f "$WS/linux-6.18/modules.tar.gz" ] \
+            && tar -xzf "$WS/linux-6.18/modules.tar.gz" -C "$R/"
           [ -f "$R/usr/local/bin/micropython" ] || {
             echo "ERROR: micropython missing"; exit 1; }
           chmod 555 "$R/usr/local/bin/micropython"
@@ -496,17 +386,14 @@ jobs:
           ln -sf micropython python
           ln -sf micropython python3
           cd "$WS"
-
           echo 'export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin' \
             > "$R/etc/profile.d/python.sh"
           chmod +x "$R/etc/profile.d/python.sh"
-
           sudo mknod -m 666 "$R/dev/null" c 1 3 2>/dev/null || true
           sudo mknod -m 644 "$R/dev/console" c 5 1 2>/dev/null || true
           for t in 1 2 3 4; do
             sudo mknod -m 660 "$R/dev/tty${t}" c 4 "$t" 2>/dev/null || true
           done
-
           printf '%s\n' \
             '#!/bin/sh' \
             'IFACE="$1"' \
@@ -537,7 +424,6 @@ jobs:
             'exit 0' \
             > "$R/usr/share/udhcpc/default.script"
           chmod +x "$R/usr/share/udhcpc/default.script"
-
           printf '%s\n' '#!/bin/sh' 'echo "=== GudaoUI Linux V1 ==="' 'echo "Kernel: $(/bin/busybox uname -r)"' 'echo "Arch:   $(/bin/busybox uname -m)"' 'echo "Cmds: about calc python desktop reboot poweroff"' > "$R/usr/local/bin/about"
           chmod +x "$R/usr/local/bin/about"
           printf '%s\n' '#!/bin/sh' '[ $# -eq 0 ] && echo "Usage: calc EXPR" && exit 1' '/bin/busybox awk "BEGIN {print $*}"' > "$R/usr/local/bin/calc"
@@ -546,7 +432,6 @@ jobs:
           chmod +x "$R/usr/local/bin/reboot"
           printf '%s\n' '#!/bin/sh' 'echo "Powering off..."' 'sync' '/bin/busybox poweroff -f' > "$R/usr/local/bin/poweroff"
           chmod +x "$R/usr/local/bin/poweroff"
-
           cd "$R/usr/bin"
           ln -sf ../local/bin/about about
           ln -sf ../local/bin/calc calc
@@ -554,7 +439,6 @@ jobs:
           ln -sf ../local/bin/poweroff poweroff
           ln -sf poweroff halt
           cd "$WS"
-
           printf '%s\n' \
             '#!/bin/sh' \
             'export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin' \
@@ -635,7 +519,6 @@ jobs:
             'exec /bin/sh' \
             > "$R/init"
           chmod +x "$R/init"
-
           printf '%s\n' 'root:x:0:0:root:/root:/bin/sh' > "$R/etc/passwd"
           printf '%s\n' 'root:x:0:' > "$R/etc/group"
           printf '%s\n' 'nameserver 114.114.114.114' 'nameserver 8.8.8.8' 'nameserver 223.5.5.5' > "$R/etc/resolv.conf"
@@ -643,7 +526,6 @@ jobs:
           printf '%s\n' 'proc    /proc    proc    defaults    0 0' 'sysfs   /sys     sysfs   defaults    0 0' 'devtmpfs /dev    devtmpfs defaults  0 0' 'tmpfs   /tmp     tmpfs   defaults    0 0' 'tmpfs   /run     tmpfs   defaults    0 0' 'tmpfs   /dev/shm tmpfs   defaults    0 0' > "$R/etc/fstab"
           printf '%s\n' 'export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin' 'export TERM=linux' "export PS1='\\u@\\h:\\w\\\$ '" "alias ll='ls -la'" "alias python='micropython'" > "$R/etc/profile"
           echo "rootfs: $(du -sh "$R" | cut -f1)"
-
       - name: Download X11 packages
         if: env.DESKTOP != 'none'
         run: |
@@ -674,7 +556,6 @@ jobs:
           ls -la twm*.deb 2>/dev/null || echo "No twm packages found"
           echo "=== Twm package details ==="
           dpkg-deb -I twm*.deb 2>/dev/null || echo "Cannot inspect twm deb"
-
       - name: Install desktop into rootfs
         if: env.DESKTOP != 'none'
         run: |
@@ -693,7 +574,6 @@ jobs:
           echo "=== Checking TWM installation ==="
           ls -la "$R/usr/bin/twm" 2>/dev/null || echo "TWM binary NOT FOUND in rootfs"
           which twm 2>/dev/null && echo "TWM found on host" || echo "TWM NOT found on host"
-
           echo "=== Checking Xorg installation ==="
           ls -la "$R/usr/bin/Xorg" 2>/dev/null || echo "Xorg binary not found"
           ls -la "$R/usr/lib/xorg/" 2>/dev/null || echo "Xorg directory not found"
@@ -716,7 +596,6 @@ jobs:
             echo "WARNING: Searching for Xorg..."
             find "$R/usr" -name "Xorg" -type f 2>/dev/null | head -10
           fi
-
           printf '%s\n' '/lib/x86_64-linux-gnu' '/usr/lib/x86_64-linux-gnu' '/lib64' '/usr/lib64' > "$R/etc/ld.so.conf"
           chmod 644 "$R/etc/ld.so.conf"
           [ -x "$R/usr/sbin/ldconfig" ] && sudo chroot "$R" /usr/sbin/ldconfig 2>/dev/null || true
@@ -735,7 +614,6 @@ jobs:
           else
             echo "WARNING: /usr/lib/x86_64-linux-gnu not found"
           fi
-
           mkdir -p "$R/usr/lib/xorg"
           if [ -n "$XORG_BIN" ]; then
             echo "Creating symlink: /usr/lib/xorg/Xorg -> $XORG_BIN"
@@ -750,32 +628,26 @@ jobs:
           echo "=== Final Xorg setup ==="
           ls -la "$R/usr/lib/xorg/Xorg" 2>/dev/null || echo "Xorg symlink not created"
           ls -la "$R/usr/bin/Xorg" 2>/dev/null || echo "Xorg wrapper not found"
-
           mkdir -p "$R/etc/X11/xinit" "$R/root"
           printf '%s\n' '#!/bin/sh' '[ -f "$HOME/.xinitrc" ] && exec "$HOME/.xinitrc"' 'exec xterm' > "$R/etc/X11/xinit/xinitrc"
           chmod +x "$R/etc/X11/xinit/xinitrc"
           printf '%s\n' '#!/bin/sh' 'export XDG_SESSION_TYPE=x11' 'export XDG_CURRENT_DESKTOP=GudaoUI' 'xterm -geometry 100x30+50+50 -bg black -fg green -title "GudaoUI" &' 'sleep 1' '[ -n "$WM_CMD" ] && exec $WM_CMD' > "$R/root/.xinitrc"
           chmod +x "$R/root/.xinitrc"
-
           printf '%s\n' '#!/bin/sh' 'export HOME="${HOME:-/root}"' 'export DISPLAY="${DISPLAY:-:0}"' 'export XDG_SESSION_TYPE=x11' 'XAUTH="$HOME/.Xauthority"' 'touch "$XAUTH" && chmod 600 "$XAUTH"' 'CK=$(/bin/busybox head -c 16 /dev/urandom | /bin/busybox od -An -tx1 | /bin/busybox tr -d " \\n")' '[ -n "$CK" ] && {' "  printf '\\x00' >> \"\$XAUTH\"" "  printf '%s' \"\$DISPLAY\" >> \"\$XAUTH\"" "  printf '\\x00' >> \"\$XAUTH\"" "  printf '%s' 'MIT-MAGIC-COOKIE-1' >> \"\$XAUTH\"" "  printf '\\x00' >> \"\$XAUTH\"" "  printf '%04d' 16 >> \"\$XAUTH\"" "  printf '%s' \"\$CK\" >> \"\$XAUTH\"" '}' 'echo "=== Initializing Xorg ==="' 'if [ ! -e /usr/lib/xorg/Xorg ] && [ -x /usr/bin/Xorg ]; then' '  echo "Creating Xorg symlink: /usr/lib/xorg/Xorg -> /usr/bin/Xorg"' '  mkdir -p /usr/lib/xorg' '  /bin/busybox ln -sf /usr/bin/Xorg /usr/lib/xorg/Xorg' 'fi' '/bin/busybox killall Xorg 2>/dev/null' '/bin/busybox killall X 2>/dev/null' 'sleep 1' 'XORG=""' 'if [ -x /usr/bin/Xorg ]; then' '  XORG="/usr/bin/Xorg"' 'elif [ -x /usr/lib/xorg/Xorg ]; then' '  XORG="/usr/lib/xorg/Xorg"' 'elif [ -x /usr/bin/X ]; then' '  XORG="/usr/bin/X"' 'fi' 'if [ -n "$XORG" ]; then' '  echo "Starting Xorg: $XORG"' '  "$XORG" "$DISPLAY" &' 'else' '  echo "ERROR: No X server found"; exit 1' 'fi' 'T=0' 'while [ $T -lt 10 ]; do' '  /bin/busybox pgrep Xorg >/dev/null 2>&1 && break' '  /bin/busybox pgrep X >/dev/null 2>&1 && break' '  sleep 1; T=$((T+1))' 'done' '/bin/busybox pgrep Xorg >/dev/null 2>&1 || /bin/busybox pgrep X >/dev/null 2>&1 || { echo "ERROR: X failed"; exit 1; }' 'echo "X started on $DISPLAY"' '[ -x "$HOME/.xinitrc" ] && exec "$HOME/.xinitrc"' 'exec xterm' \
             > "$R/usr/bin/startx"
           chmod +x "$R/usr/bin/startx"
-
           printf '%s\n' '#!/bin/sh' 'export HOME=/root DISPLAY=:0' 'export XDG_SESSION_TYPE=x11' 'export XDG_CURRENT_DESKTOP=GudaoUI' 'WM="${1:-twm}"' 'case "$WM" in' '  icewm) echo "exec icewm --replace" > /root/.xinitrc ;;' '  fluxbox) echo "exec fluxbox" > /root/.xinitrc ;;' '  *) echo "exec twm" > /root/.xinitrc ;;' 'esac' '/bin/busybox chmod +x /root/.xinitrc' 'if [ -x /usr/bin/startx ]; then exec startx' 'elif [ -x /usr/bin/xinit ]; then exec xinit -- /usr/bin/Xorg :0' 'else echo "ERROR: no X init"; exit 1; fi' \
             > "$R/usr/local/bin/start-desktop"
           chmod +x "$R/usr/local/bin/start-desktop"
-
           printf '%s\n' '#!/bin/sh' 'echo "GudaoUI Desktop"' '/bin/busybox command -v icewm >/dev/null 2>&1 && echo "  start-desktop icewm"' '/bin/busybox command -v fluxbox >/dev/null 2>&1 && echo "  start-desktop fluxbox"' '/bin/busybox command -v twm >/dev/null 2>&1 && echo "  start-desktop twm"' 'if [ -f /etc/default-desktop ]; then W=$(/bin/busybox cat /etc/default-desktop); echo "Default: $W"; start-desktop "$W"' 'else start-desktop twm; fi' \
             > "$R/usr/local/bin/desktop"
           chmod +x "$R/usr/local/bin/desktop"
-
           case "${{ env.DESKTOP }}" in
             icewm) echo "icewm" > "$R/etc/default-desktop" ;;
             fluxbox) echo "fluxbox" > "$R/etc/default-desktop" ;;
             twm) echo "twm" > "$R/etc/default-desktop" ;;
             both) echo "twm" > "$R/etc/default-desktop" ;;
           esac
-
           mkdir -p "$R/root/.fluxbox"
           printf '%s\n' 'session.screen0.toolbar.visible: true' 'session.screen0.toolbar.widthPercent: 100' 'session.screen0.tabs.usePixmap: false' 'session.screen0.menu.moveOnResize: true' 'session.screen0.edgeSnapThreshold: 10' 'session.screen0.windowPlacement: RowSmartPlacement' 'session.screen0.focusNewWindows: true' 'session.screen0.focusModel: ClickFocus' > "$R/root/.fluxbox/init"
           chmod 644 "$R/root/.fluxbox/init"
@@ -783,7 +655,6 @@ jobs:
           chmod 644 "$R/root/.fluxbox/keys"
           printf '%s\n' '[app] (name=xterm) {geometry 100x30+50+50}' '[app] (name=xterm) {sticky}' > "$R/root/.fluxbox/apps"
           chmod 644 "$R/root/.fluxbox/apps"
-
           mkdir -p "$R/root/.icewm"
           printf '%s\n' 'TaskBarShowClock = 1' 'TaskBarShowMemory = 1' 'TaskBarShowCPUStatus = 1' 'TaskBarShowWindows = 1' 'ShowProgramsMenu = 1' 'ShowLogoutConfirmation = 1' 'ClockCommand = xclock -digital -24h -brief' 'ClockFmt = %H:%M' > "$R/root/.icewm/preferences"
           chmod 644 "$R/root/.icewm/preferences"
@@ -793,13 +664,11 @@ jobs:
           chmod 644 "$R/root/.twmrc"
           
           echo "Desktop: $(du -sh "$R" | cut -f1)"
-
       - name: Create squashfs
         run: |
           WS="$GITHUB_WORKSPACE"
           mksquashfs "$WS/rootfs" "$WS/rootfs.squashfs" -comp xz -b 1M
           du -h "$WS/rootfs.squashfs"
-
       - name: Build initramfs
         run: |
           WS="$GITHUB_WORKSPACE"
@@ -814,22 +683,20 @@ jobs:
           for t in 1 2 3 4; do
             sudo mknod -m 660 "$ID/dev/tty${t}" c 4 "$t" 2>/dev/null || true
           done
-          printf '%s\n' '#!/bin/sh' 'mount -t proc none /proc' 'mount -t sysfs none /sys' 'mount -t devtmpfs none /dev' 'sleep 2' 'echo "Booting squashfs+overlay..."' 'echo "Available block devices:"' 'ls -la /dev/ | head -40' 'mkdir -p /mnt/iso' 'ISO_OK=0' 'for d in /dev/cdrom /dev/dvd /dev/sr* /dev/scd* /dev/vd* /dev/hd* /dev/sd* /dev/nvme*; do' '[ -b "$d" ] || continue' 'echo "Trying $d..."' 'if mount -t iso9660 "$d" /mnt/iso 2>/dev/null; then' 'echo "SUCCESS: Mounted ISO from $d"' 'ISO_OK=1; break; fi' 'done' 'if [ $ISO_OK -eq 0 ]; then' 'echo "ERROR: No ISO found, listing all devices..."' 'ls -la /dev/' 'exec sh; fi' 'echo "ISO mounted, checking squashfs..."' 'ls -la /mnt/iso/boot/' '[ -f /mnt/iso/boot/rootfs.squashfs ] || { echo "ERROR: squashfs not found"; exec sh; }' 'echo "Mounting squashfs..."' 'mkdir -p /mnt/root' 'echo "Creating loop devices..."' 'for i in 0 1 2 3 4 5 6 7; do' '  mknod -m 660 /dev/loop${i} b 7 ${i} 2>/dev/null' 'done' 'echo "Loop devices created:"' 'ls -la /dev/loop*' 'mount -t squashfs -o ro,loop /mnt/iso/boot/rootfs.squashfs /mnt/root || { echo "ERROR: squashfs mount fail"; exec sh; }' 'echo "Squashfs mounted successfully"' 'mkdir -p /mnt/overlay' 'mount -t tmpfs tmpfs /mnt/overlay' 'mkdir -p /mnt/overlay/upper /mnt/overlay/work' 'echo "Mounting overlay..."' 'mkdir -p /newroot' 'mount -t overlay overlay -o lowerdir=/mnt/root,upperdir=/mnt/overlay/upper,workdir=/mnt/overlay/work /newroot || { echo "ERROR: overlay fail"; exec sh; }' 'echo "Overlay mounted"' '[ -x /newroot/init ] || { echo "ERROR: no init in newroot"; ls -la /newroot/; exec sh; }' 'echo "Switching to new root..."' 'umount /proc /sys /dev 2>/dev/null' 'exec switch_root /newroot /init' > "$ID/init"
+          printf '%s\n' '#!/bin/sh' 'mount -t proc none /proc' 'mount -t sysfs none /sys' 'mount -t devtmpfs none /dev' 'sleep 1' 'echo "Booting squashfs+overlay..."' 'mkdir -p /mnt/iso' 'ISO_OK=0' 'for d in /dev/sr* /dev/hd* /dev/sd*; do' '  [ -e "$d" ] || continue' '  if mount -t iso9660 "$d" /mnt/iso 2>/dev/null; then' '    echo "Mounted $d"; ISO_OK=1; break' '  fi' 'done' '[ $ISO_OK -eq 0 ] && { echo "ERROR: no ISO"; exec sh; }' '[ -f /mnt/iso/boot/rootfs.squashfs ] || { echo "ERROR: squashfs not found"; exec sh; }' 'mount -t squashfs -o ro,loop /mnt/iso/boot/rootfs.squashfs /mnt/root || { echo "ERROR: squashfs fail"; exec sh; }' 'mkdir -p /mnt/overlay' 'mount -t tmpfs tmpfs /mnt/overlay' 'mkdir -p /mnt/overlay/upper /mnt/overlay/work' 'mount -t overlay overlay -o lowerdir=/mnt/root,upperdir=/mnt/overlay/upper,workdir=/mnt/overlay/work /newroot || { echo "ERROR: overlay fail"; exec sh; }' '[ -x /newroot/init ] || { echo "ERROR: no init"; exec sh; }' 'umount /proc /sys /dev 2>/dev/null' 'exec switch_root /newroot /init' \
+            > "$ID/init"
           chmod +x "$ID/init"
           cd "$ID"
           find . | cpio -o -H newc | gzip > "$WS/initramfs.cpio.gz"
           du -h "$WS/initramfs.cpio.gz"
-
       - name: Create ISO
         run: |
           WS="$GITHUB_WORKSPACE"
           mkdir -p "$WS/iso/boot/grub"
-          cp "$WS/linux-alpine/arch/x86/boot/bzImage" "$WS/iso/boot/vmlinuz"
+          cp "$WS/linux-6.18/arch/x86/boot/bzImage" "$WS/iso/boot/vmlinuz"
           cp "$WS/initramfs.cpio.gz" "$WS/iso/boot/"
           cp "$WS/rootfs.squashfs" "$WS/iso/boot/"
-
           printf '%s\n' 'set default=0' 'set timeout=5' 'set menu_color_normal=cyan/blue' 'set menu_color_highlight=white/blue' > "$WS/iso/boot/grub/grub.cfg"
-
           case "${{ env.DESKTOP }}" in
             none)
               printf '%s\n' 'menuentry "GudaoUI (Console)" {' '  linux /boot/vmlinuz quiet' '  initrd /boot/initramfs.cpio.gz' '}' 'menuentry "GudaoUI (Debug)" {' '  linux /boot/vmlinuz loglevel=7' '  initrd /boot/initramfs.cpio.gz' '}' >> "$WS/iso/boot/grub/grub.cfg"
@@ -847,10 +714,8 @@ jobs:
               printf '%s\n' 'menuentry ">>> GudaoUI + TWM <<<" {' '  linux /boot/vmlinuz quiet desktop=twm' '  initrd /boot/initramfs.cpio.gz' '}' 'menuentry ">>> GudaoUI + IceWM <<<" {' '  linux /boot/vmlinuz quiet desktop=icewm' '  initrd /boot/initramfs.cpio.gz' '}' 'menuentry ">>> GudaoUI + Fluxbox <<<" {' '  linux /boot/vmlinuz quiet desktop=fluxbox' '  initrd /boot/initramfs.cpio.gz' '}' 'menuentry "GudaoUI (Console)" {' '  linux /boot/vmlinuz quiet desktop=console' '  initrd /boot/initramfs.cpio.gz' '}' >> "$WS/iso/boot/grub/grub.cfg"
               ;;
           esac
-
           grub-mkrescue -o "$ISO_NAME" "$WS/iso/"
           du -h "$ISO_NAME"
-
       - name: Upload ISO
         uses: actions/upload-artifact@v4
         with:
