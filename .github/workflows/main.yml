@@ -148,6 +148,22 @@ jobs:
             NETDEVICES NET_CORE ACPI ACPI_BUTTON; do
             scripts/config --enable "$o"
           done
+          # UEFI support for booting
+          for o in EFI EFI_STUB EFI_VARS EFI_RUNTIME_MAP \
+            EFI_BOOTLOADER EFI_FAKE_MEMMAP; do
+            scripts/config --enable "$o"
+          done
+          # Framebuffer support for graphics
+          for o in FB FB_SIMPLE FB_CFB_FILLRECT FB_CFB_COPYAREA \
+            FB_CFB_IMAGEBLIT FB_SYS_FILLRECT FB_SYS_COPYAREA \
+            FB_SYS_IMAGEBLIT VESA_FB; do
+            scripts/config --enable "$o"
+          done
+          # VGA and console support
+          scripts/config --enable VGA_CONSOLE
+          scripts/config --enable VGA_ARB
+          scripts/config --enable DRM
+          scripts/config --enable DRM_VGA16_FB
           # ISO9660 CD-ROM filesystem support
           for o in ISO9660_FS JOLIET TRANS TYPES DEVFS_FS; do
             scripts/config --enable "$o"
