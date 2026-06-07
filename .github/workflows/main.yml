@@ -216,7 +216,8 @@ jobs:
             KILL KILLALL PGREP PIDOF RENICE \
             FEATURE_PS_LONG \
             FEATURE_TOP_CPU_USAGE_PERCENTAGE \
-            FEATURE_SHUTDOWN_LOGIN OD; do
+            FEATURE_SHUTDOWN_LOGIN OD \
+            LDD; do
             grep -q "^CONFIG_${A}=y" .config \
               || echo "CONFIG_${A}=y" >> .config
           done
@@ -362,12 +363,6 @@ jobs:
             "$R"/{usr/local/bin,usr/share/udhcpc} \
             "$R"/{etc,proc,sys,dev,lib,lib64,tmp,var} \
             "$R"/{run,root,home,dev/shm,etc/profile.d}
-          # Install ldd command
-          if [ -x /usr/bin/ldd ]; then
-            cp /usr/bin/ldd "$R/usr/bin/ldd"
-            chmod +x "$R/usr/bin/ldd"
-            echo "ldd command installed"
-          fi
           cp -a "$WS/busybox-1.36.1/_install/"* "$R/"
           cd "$WS/busybox-1.36.1/_install"
           echo "=== BusyBox _install directory contents ==="
@@ -382,7 +377,7 @@ jobs:
             echo "=== Checking installed symlinks ==="
             ls -la "$R/bin/" | head -30
             echo "=== Verifying key commands ==="
-            for cmd in cut tr grep sed awk ip udhcpc; do
+            for cmd in cut tr grep sed awk ip udhcpc ldd; do
               if [ -x "$R/bin/$cmd" ]; then
                 echo "OK: $cmd"
               else
