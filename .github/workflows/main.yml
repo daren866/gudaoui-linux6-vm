@@ -593,13 +593,15 @@ jobs:
             FILE_TYPE=$(file "$R/usr/bin/twm" 2>/dev/null | grep -i "ELF")
             if [ -n "$FILE_TYPE" ]; then
               echo "=== Checking TWM dependencies ==="
-              TWM_DEPS=$(ldd "$R/usr/bin/twm" 2>/dev/null | grep '=>' | awk '{print $3}' | grep -v '^$')
+              TWM_DEPS=$(ldd "$R/usr/bin/twm" 2>/dev/null | grep '=>' | awk '{print $3}' | grep -E '^/' | grep -v '^$')
               for dep in $TWM_DEPS; do
-                dep_dir=$(dirname "$dep")
-                mkdir -p "$R$dep_dir"
-                if [ ! -f "$R$dep" ]; then
-                  cp "$dep" "$R$dep_dir/"
-                  echo "Copied TWM dependency: $dep"
+                if [ -f "$dep" ]; then
+                  dep_dir=$(dirname "$dep")
+                  mkdir -p "$R$dep_dir"
+                  if [ ! -f "$R$dep" ]; then
+                    cp "$dep" "$R$dep_dir/"
+                    echo "Copied TWM dependency: $dep"
+                  fi
                 fi
               done
               # Verify TWM can run
@@ -636,13 +638,15 @@ jobs:
           # Check and copy Xorg dependencies (only for ELF binary)
           if [ -n "$XORG_REAL" ] && [ -f "$XORG_REAL" ]; then
             echo "=== Checking Xorg dependencies ==="
-            XORG_DEPS=$(ldd "$XORG_REAL" 2>/dev/null | grep '=>' | awk '{print $3}' | grep -v '^$')
+            XORG_DEPS=$(ldd "$XORG_REAL" 2>/dev/null | grep '=>' | awk '{print $3}' | grep -E '^/' | grep -v '^$')
             for dep in $XORG_DEPS; do
-              dep_dir=$(dirname "$dep")
-              mkdir -p "$R$dep_dir"
-              if [ ! -f "$R$dep" ]; then
-                cp "$dep" "$R$dep_dir/"
-                echo "Copied Xorg dependency: $dep"
+              if [ -f "$dep" ]; then
+                dep_dir=$(dirname "$dep")
+                mkdir -p "$R$dep_dir"
+                if [ ! -f "$R$dep" ]; then
+                  cp "$dep" "$R$dep_dir/"
+                  echo "Copied Xorg dependency: $dep"
+                fi
               fi
             done
           fi
@@ -651,13 +655,15 @@ jobs:
             FILE_TYPE=$(file "$R/usr/bin/xterm" 2>/dev/null | grep -i "ELF")
             if [ -n "$FILE_TYPE" ]; then
               echo "=== Checking xterm dependencies ==="
-              XTERM_DEPS=$(ldd "$R/usr/bin/xterm" 2>/dev/null | grep '=>' | awk '{print $3}' | grep -v '^$')
+              XTERM_DEPS=$(ldd "$R/usr/bin/xterm" 2>/dev/null | grep '=>' | awk '{print $3}' | grep -E '^/' | grep -v '^$')
               for dep in $XTERM_DEPS; do
-                dep_dir=$(dirname "$dep")
-                mkdir -p "$R$dep_dir"
-                if [ ! -f "$R$dep" ]; then
-                  cp "$dep" "$R$dep_dir/"
-                  echo "Copied xterm dependency: $dep"
+                if [ -f "$dep" ]; then
+                  dep_dir=$(dirname "$dep")
+                  mkdir -p "$R$dep_dir"
+                  if [ ! -f "$R$dep" ]; then
+                    cp "$dep" "$R$dep_dir/"
+                    echo "Copied xterm dependency: $dep"
+                  fi
                 fi
               done
             fi
@@ -667,13 +673,15 @@ jobs:
             FILE_TYPE=$(file "$R/usr/bin/icewm" 2>/dev/null | grep -i "ELF")
             if [ -n "$FILE_TYPE" ]; then
               echo "=== Checking icewm dependencies ==="
-              ICEWM_DEPS=$(ldd "$R/usr/bin/icewm" 2>/dev/null | grep '=>' | awk '{print $3}' | grep -v '^$')
+              ICEWM_DEPS=$(ldd "$R/usr/bin/icewm" 2>/dev/null | grep '=>' | awk '{print $3}' | grep -E '^/' | grep -v '^$')
               for dep in $ICEWM_DEPS; do
-                dep_dir=$(dirname "$dep")
-                mkdir -p "$R$dep_dir"
-                if [ ! -f "$R$dep" ]; then
-                  cp "$dep" "$R$dep_dir/"
-                  echo "Copied icewm dependency: $dep"
+                if [ -f "$dep" ]; then
+                  dep_dir=$(dirname "$dep")
+                  mkdir -p "$R$dep_dir"
+                  if [ ! -f "$R$dep" ]; then
+                    cp "$dep" "$R$dep_dir/"
+                    echo "Copied icewm dependency: $dep"
+                  fi
                 fi
               done
             fi
@@ -683,13 +691,15 @@ jobs:
             FILE_TYPE=$(file "$R/usr/bin/fluxbox" 2>/dev/null | grep -i "ELF")
             if [ -n "$FILE_TYPE" ]; then
               echo "=== Checking fluxbox dependencies ==="
-              FLUXBOX_DEPS=$(ldd "$R/usr/bin/fluxbox" 2>/dev/null | grep '=>' | awk '{print $3}' | grep -v '^$')
+              FLUXBOX_DEPS=$(ldd "$R/usr/bin/fluxbox" 2>/dev/null | grep '=>' | awk '{print $3}' | grep -E '^/' | grep -v '^$')
               for dep in $FLUXBOX_DEPS; do
-                dep_dir=$(dirname "$dep")
-                mkdir -p "$R$dep_dir"
-                if [ ! -f "$R$dep" ]; then
-                  cp "$dep" "$R$dep_dir/"
-                  echo "Copied fluxbox dependency: $dep"
+                if [ -f "$dep" ]; then
+                  dep_dir=$(dirname "$dep")
+                  mkdir -p "$R$dep_dir"
+                  if [ ! -f "$R$dep" ]; then
+                    cp "$dep" "$R$dep_dir/"
+                    echo "Copied fluxbox dependency: $dep"
+                  fi
                 fi
               done
             fi
