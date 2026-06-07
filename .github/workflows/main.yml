@@ -314,25 +314,24 @@ jobs:
           sudo apt-get update
           # 系统基础 & 编译依赖
           sudo apt-get install -y \
-            libc6 libstdc++6 libgcc-s1 \
-            libmbedtls-dev libmbedcrypto3 libmbedx509-3 \
+            libc6 libstdc++6 libgcc-s1 libmbedtls-dev \
             # 压缩归档库
             zlib1g libzstd1 liblzma5 libbz2-1.0 liblz4-1 \
             # 网络通信库
-            libssl3 libcrypto3 libcurl4 \
+            libssl3 libcurl4 \
             # 数据解析库
-            libjson-c3 libxml2 libyaml-0-2 \
+            libjson-c5 libxml2 libyaml-0-2 \
             # 终端/UI库
             libncurses6 libtinfo6 libx11-6 libxext6 libxmu6 \
             libxt6 libsm6 libice6 \
             # 系统工具库
             libdbus-1-3 libsystemd0 libudev1 \
             libpam0g libselinux1 libsepol1 libaudit1 libcap2 \
-            libpcre3 libffi7 libacl1 libattr1 \
+            libpcre3 libffi8 libacl1 libattr1 \
             libblkid1 libuuid1 libsmartcols1 libkmod2 \
             libdw1 libelf1 libmpdec3 libgmp10
           # 提取库文件到rootfs
-          DEB_PKGS="libc6 libstdc++6 libgcc-s1 libmbedtls-dev libmbedcrypto3 libmbedx509-3 zlib1g libzstd1 liblzma5 libbz2-1.0 liblz4-1 libssl3 libcrypto3 libcurl4 libjson-c3 libxml2 libyaml-0-2 libncurses6 libtinfo6 libx11-6 libxext6 libxmu6 libxt6 libsm6 libice6 libdbus-1-3 libsystemd0 libudev1 libpam0g libselinux1 libsepol1 libaudit1 libcap2 libpcre3 libffi7 libacl1 libattr1 libblkid1 libuuid1 libsmartcols1 libkmod2 libdw1 libelf1 libmpdec3 libgmp10"
+          DEB_PKGS="libc6 libstdc++6 libgcc-s1 libmbedtls-dev zlib1g libzstd1 liblzma5 libbz2-1.0 liblz4-1 libssl3 libcurl4 libjson-c5 libxml2 libyaml-0-2 libncurses6 libtinfo6 libx11-6 libxext6 libxmu6 libxt6 libsm6 libice6 libdbus-1-3 libsystemd0 libudev1 libpam0g libselinux1 libsepol1 libaudit1 libcap2 libpcre3 libffi8 libacl1 libattr1 libblkid1 libuuid1 libsmartcols1 libkmod2 libdw1 libelf1 libmpdec3 libgmp10"
           mkdir -p "$R/lib" "$R/lib64" "$R/usr/lib"
           for pkg in $DEB_PKGS; do
             for deb in $(find /var/cache/apt/archives -name "${pkg}_*.deb" 2>/dev/null); do
