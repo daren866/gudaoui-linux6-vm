@@ -97,16 +97,11 @@ jobs:
       - name: Download kernel
         if: steps.kernel-cache.outputs.cache-hit != 'true'
         run: |
-          echo "=== Adding deb-src to sources.list ==="
-          sudo bash -c 'echo "deb-src http://azure.archive.ubuntu.com/ubuntu/ noble main" >> /etc/apt/sources.list'
-          sudo bash -c 'echo "deb-src http://azure.archive.ubuntu.com/ubuntu/ noble-updates main" >> /etc/apt/sources.list'
-          sudo bash -c 'echo "deb-src http://azure.archive.ubuntu.com/ubuntu/ noble-security main" >> /etc/apt/sources.list'
-          sudo apt-get update
-          echo "=== Downloading Debian kernel source ==="
-          apt-get source linux-image-unsigned-$(uname -r)
-          KERNEL_DIR=$(ls -d linux-* | grep -v '.tar' | head -1)
-          echo "KERNEL_DIR=$KERNEL_DIR"
-          mv "$KERNEL_DIR" linux-debian
+          echo "=== Downloading Linux kernel source ==="
+          wget -q https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.1.96.tar.xz
+          echo "=== Extracting kernel source ==="
+          tar xf linux-6.1.96.tar.xz
+          mv linux-6.1.96 linux-debian
           ls -la linux-debian
 
       - name: Configure kernel
