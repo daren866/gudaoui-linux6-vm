@@ -778,12 +778,12 @@ jobs:
           ls -la "$R/usr/lib/xorg/Xorg" 2>/dev/null || echo "Xorg symlink not created"
           ls -la "$R/usr/bin/Xorg" 2>/dev/null || echo "Xorg wrapper not found"
           
-          # Configure llvmpipe for CPU software rendering
-          echo "=== Setting up llvmpipe (CPU software rendering) ==="
+          # Configure X11 for software rendering (gdui-twm.conf)
+          echo "=== Setting up gdui-twm X11 configuration ==="
           mkdir -p "$R/etc/X11/xorg.conf.d"
-          printf '%s\n' 'Section "ServerFlags"' 'Option "AIGLX" "false"' 'Option "GLX" "false"' 'EndSection' > "$R/etc/X11/xorg.conf.d/01-disable-glx.conf"
-          printf '%s\n' 'Section "Device"' 'Identifier "llvmpipe"' 'Driver "modesetting"' 'Option "AccelMethod" "glamor"' 'Option "DRI" "3"' 'EndSection' > "$R/etc/X11/xorg.conf.d/02-llvmpipe.conf"
-          echo "Created Xorg config for llvmpipe"
+          # gdui-twm.conf: No GPU dependency, no HW acceleration, no SW cursor, 1024x768
+          printf '%s\n' '# GudaoUI TWM Configuration' '# Pure software rendering, no GPU/hardware dependency' 'Section "ServerFlags"' '  Option "AIGLX" "false"' '  Option "GLX" "false"' '  Option "DRI" "false"' '  Option "LegacySVG" "false"' '  Option "DefaultServerLayout" "Layout"' 'EndSection' '' 'Section "ServerLayout"' '  Identifier "Layout"' '  Screen "Screen0"' '  InputDevice "Mouse0" "CorePointer"' '  InputDevice "Keyboard0" "CoreKeyboard"' 'EndSection' '' 'Section "Device"' '  Identifier "Videocard0"' '  Driver "fbdev"' '  # No vendor-specific drivers, use framebuffer' '  Option "NoAccel" "true"' '  # Disable all hardware acceleration' '  Option "SWcursor" "false"' '  # Disable software cursor' 'EndSection' '' 'Section "Monitor"' '  Identifier "Monitor0"' '  ModelName "1024x768"' '  HorizSync 31.5-64.3' '  VertRefresh 50-90' '  Modeline "1024x768" 65.00 1024 1048 1184 1344 768 771 777 806 -HSync -VSync' '  Option "PreferredMode" "1024x768"' 'EndSection' '' 'Section "Screen"' '  Identifier "Screen0"' '  Device "Videocard0"' '  Monitor "Monitor0"' '  DefaultDepth 24' '  SubSection "Display"' '    Depth 24' '    Modes "1024x768"' '  EndSubSection' 'EndSection' '' 'Section "InputDevice"' '  Identifier "Mouse0"' '  Driver "mouse"' '  Option "Protocol" "auto"' '  Option "Device" "/dev/ttyS0"' 'EndSection' '' 'Section "InputDevice"' '  Identifier "Keyboard0"' '  Driver "kbd"' '  Option "XkbLayout" "us"' 'EndSection' > "$R/etc/X11/xorg.conf.d/gdui-twm.conf"
+          echo "Created gdui-twm.conf: software rendering, 1024x768, no HW accel"
           
           # Ensure DRI drivers directory exists
           mkdir -p "$R/usr/lib/dri" "$R/usr/lib/x86_64-linux-gnu/dri"
