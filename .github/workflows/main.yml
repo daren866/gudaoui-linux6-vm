@@ -170,12 +170,26 @@ jobs:
           printf 'CONFIG_SCSI_CDROM=y\n' >> .config
           printf 'CONFIG_SCSI_SR=y\n' >> .config
           printf 'CONFIG_SCSI_SR_MOD=y\n' >> .config
+          # SCSI controller drivers for VMs
+          printf 'CONFIG_SCSI_VMWARE_PVSCSI=y\n' >> .config
+          printf 'CONFIG_SCSI_LSI_LOGIC=y\n' >> .config
+          printf 'CONFIG_SCSI_LSI_SAS=y\n' >> .config
+          printf 'CONFIG_SCSI_MEGARAID_SAS=y\n' >> .config
+          printf 'CONFIG_SCSI_BUSLOGIC=y\n' >> .config
+          # ATA support
           printf 'CONFIG_ATA=y\n' >> .config
           printf 'CONFIG_PATA_ACPI=y\n' >> .config
           printf 'CONFIG_ATA_PIIX=y\n' >> .config
           printf 'CONFIG_ATA_GENERIC=y\n' >> .config
           printf 'CONFIG_ATAPI=y\n' >> .config
           printf 'CONFIG_CDROM_PKTCDVD=y\n' >> .config
+          # NVMe support
+          printf 'CONFIG_NVME_CORE=y\n' >> .config
+          printf 'CONFIG_NVME_FABRICS=y\n' >> .config
+          printf 'CONFIG_BLK_DEV_NVME=y\n' >> .config
+          # Virtio block device (for QEMU/KVM)
+          printf 'CONFIG_VIRTIO_BLK=y\n' >> .config
+          printf 'CONFIG_VIRTIO_PCI=y\n' >> .config
           # File systems
           printf 'CONFIG_ISO9660_FS=y\n' >> .config
           printf 'CONFIG_JOLIET=y\n' >> .config
