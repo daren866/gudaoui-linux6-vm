@@ -353,12 +353,6 @@ jobs:
           ls -la "$R/lib/" 2>/dev/null | head -20 || echo "No libraries in /lib"
           ls -la "$R/lib64/" 2>/dev/null | head -10 || echo "No libraries in /lib64"
           echo "Base libraries installed successfully"
-          # Install ldd command
-          if [ -x /usr/bin/ldd ]; then
-            cp /usr/bin/ldd "$R/usr/bin/ldd"
-            chmod +x "$R/usr/bin/ldd"
-            echo "ldd command installed"
-          fi
 
       - name: Create rootfs
         run: |
@@ -368,6 +362,12 @@ jobs:
             "$R"/{usr/local/bin,usr/share/udhcpc} \
             "$R"/{etc,proc,sys,dev,lib,lib64,tmp,var} \
             "$R"/{run,root,home,dev/shm,etc/profile.d}
+          # Install ldd command
+          if [ -x /usr/bin/ldd ]; then
+            cp /usr/bin/ldd "$R/usr/bin/ldd"
+            chmod +x "$R/usr/bin/ldd"
+            echo "ldd command installed"
+          fi
           cp -a "$WS/busybox-1.36.1/_install/"* "$R/"
           cd "$WS/busybox-1.36.1/_install"
           echo "=== BusyBox _install directory contents ==="
