@@ -205,7 +205,7 @@ jobs:
           done
           make olddefconfig
 
-      - name: Build kernel as deb-pkg
+      - name: Build kernel
         run: |
           cd linux-alpine
           HIT="${{ steps.kernel-cache.outputs.cache-hit }}"
@@ -214,24 +214,13 @@ jobs:
             echo "Using cached kernel"
           else
             S=$(date +%s)
-            echo "=== Building kernel deb-pkg with $(nproc) cores ==="
-            make -j"$(nproc)" deb-pkg LOCALVERSION=-gudaoui
+            echo "=== Building kernel with $(nproc) cores ==="
+            # 直接编译内核，不使用deb-pkg
+            make -j"$(nproc)" bzImage
+            make -j"$(nproc)" modules
             echo "Built in $(( ($(date +%s)-S)/60 )) min"
           fi
           ls -lh arch/x86/boot/bzImage
-          ls -lh ../*.deb 2>/dev/null || echo "No deb packages found"
-
-      - name: Install kernel deb
-        run: |
-          WS="$GITHUB_WORKSPACE"
-          cd "$WS"
-          echo "=== Installing kernel packages ==="
-          ls -la *.deb 2>/dev/null || true
-          sudo dpkg -i linux-image-*.deb linux-headers-*.deb 2>/dev/null || true
-          echo "=== Kernel installed ==="
-          ls -la /boot/vmlinuz* 2>/dev/null || true
-          cp /boot/vmlinuz-*-gudaoui "$WS/linux-alpine/arch/x86/boot/bzImage" 2>/dev/null || true
-          ls -lh "$WS/linux-alpine/arch/x86/boot/bzImage"
 
       - name: Build modules tarball
         run: |
