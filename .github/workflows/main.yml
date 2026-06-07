@@ -587,36 +587,56 @@ jobs:
           echo "=== Checking TWM installation ==="
           ls -la "$R/usr/bin/twm" 2>/dev/null || echo "TWM binary NOT FOUND in rootfs"
           which twm 2>/dev/null && echo "TWM found on host" || echo "TWM NOT found on host"
-          # Check TWM dependencies and copy missing libs
+          file "$R/usr/bin/twm" 2>/dev/null || echo "TWM file info failed"
+          # Check TWM dependencies and copy missing libs (only for ELF binary)
           if [ -x "$R/usr/bin/twm" ]; then
-            echo "=== Checking TWM dependencies ==="
-            TWM_DEPS=$(ldd "$R/usr/bin/twm" 2>/dev/null | grep '=>' | awk '{print $3}' | grep -v '^$')
-            for dep in $TWM_DEPS; do
-              dep_dir=$(dirname "$dep")
-              mkdir -p "$R$dep_dir"
-              if [ ! -f "$R$dep" ]; then
-                cp "$dep" "$R$dep_dir/"
-                echo "Copied TWM dependency: $dep"
-              fi
-            done
-            # Verify TWM can run
-            echo "=== Verifying TWM dependencies in rootfs ==="
-            for dep in $TWM_DEPS; do
-              if [ -f "$R$dep" ]; then
-                echo "OK: $dep"
-              else
-                echo "MISSING: $dep"
-              fi
-            done
+            FILE_TYPE=$(file "$R/usr/bin/twm" 2>/dev/null | grep -i "ELF")
+            if [ -n "$FILE_TYPE" ]; then
+              echo "=== Checking TWM dependencies ==="
+              TWM_DEPS=$(ldd "$R/usr/bin/twm" 2>/dev/null | grep '=>' | awk '{print $3}' | grep -v '^$')
+              for dep in $TWM_DEPS; do
+                dep_dir=$(dirname "$dep")
+                mkdir -p "$R$dep_dir"
+                if [ ! -f "$R$dep" ]; then
+                  cp "$dep" "$R$dep_dir/"
+                  echo "Copied TWM dependency: $dep"
+                fi
+              done
+              # Verify TWM can run
+              echo "=== Verifying TWM dependencies in rootfs ==="
+              for dep in $TWM_DEPS; do
+                if [ -f "$R$dep" ]; then
+                  echo "OK: $dep"
+                else
+                  echo "MISSING: $dep"
+                fi
+              done
+            else
+              echo "TWM is not an ELF binary, skipping ldd check"
+            fi
           fi
           echo "=== Checking Xorg installation ==="
           ls -la "$R/usr/bin/Xorg" 2>/dev/null || echo "Xorg binary not found"
           ls -la "$R/usr/lib/xorg/" 2>/dev/null || echo "Xorg directory not found"
           file "$R/usr/bin/Xorg" 2>/dev/null || echo "Xorg file info failed"
-          # Check and copy Xorg dependencies
-          if [ -x "$R/usr/bin/Xorg" ]; then
+          
+          # Find the real Xorg binary (wrapper script -> real binary)
+          XORG_REAL=""
+          for path in "$R/usr/lib/x86_64-linux-gnu/xorg/Xorg" "$R/usr/lib/xorg/Xorg" "$R/usr/bin/Xorg.real" "$R/usr/lib/xserver-xorg-core/Xorg"; do
+            if [ -f "$path" ]; then
+              FILE_TYPE=$(file "$path" 2>/dev/null | grep -i "ELF")
+              if [ -n "$FILE_TYPE" ]; then
+                echo "Found real Xorg binary: $path"
+                XORG_REAL="$path"
+                break
+              fi
+            fi
+          done
+          
+          # Check and copy Xorg dependencies (only for ELF binary)
+          if [ -n "$XORG_REAL" ] && [ -f "$XORG_REAL" ]; then
             echo "=== Checking Xorg dependencies ==="
-            XORG_DEPS=$(ldd "$R/usr/bin/Xorg" 2>/dev/null | grep '=>' | awk '{print $3}' | grep -v '^$')
+            XORG_DEPS=$(ldd "$XORG_REAL" 2>/dev/null | grep '=>' | awk '{print $3}' | grep -v '^$')
             for dep in $XORG_DEPS; do
               dep_dir=$(dirname "$dep")
               mkdir -p "$R$dep_dir"
@@ -626,44 +646,53 @@ jobs:
               fi
             done
           fi
-          # Check and copy xterm dependencies
+          # Check and copy xterm dependencies (only for ELF binary)
           if [ -x "$R/usr/bin/xterm" ]; then
-            echo "=== Checking xterm dependencies ==="
-            XTERM_DEPS=$(ldd "$R/usr/bin/xterm" 2>/dev/null | grep '=>' | awk '{print $3}' | grep -v '^$')
-            for dep in $XTERM_DEPS; do
-              dep_dir=$(dirname "$dep")
-              mkdir -p "$R$dep_dir"
-              if [ ! -f "$R$dep" ]; then
-                cp "$dep" "$R$dep_dir/"
-                echo "Copied xterm dependency: $dep"
-              fi
-            done
+            FILE_TYPE=$(file "$R/usr/bin/xterm" 2>/dev/null | grep -i "ELF")
+            if [ -n "$FILE_TYPE" ]; then
+              echo "=== Checking xterm dependencies ==="
+              XTERM_DEPS=$(ldd "$R/usr/bin/xterm" 2>/dev/null | grep '=>' | awk '{print $3}' | grep -v '^$')
+              for dep in $XTERM_DEPS; do
+                dep_dir=$(dirname "$dep")
+                mkdir -p "$R$dep_dir"
+                if [ ! -f "$R$dep" ]; then
+                  cp "$dep" "$R$dep_dir/"
+                  echo "Copied xterm dependency: $dep"
+                fi
+              done
+            fi
           fi
-          # Check and copy icewm dependencies
+          # Check and copy icewm dependencies (only for ELF binary)
           if [ -x "$R/usr/bin/icewm" ]; then
-            echo "=== Checking icewm dependencies ==="
-            ICEWM_DEPS=$(ldd "$R/usr/bin/icewm" 2>/dev/null | grep '=>' | awk '{print $3}' | grep -v '^$')
-            for dep in $ICEWM_DEPS; do
-              dep_dir=$(dirname "$dep")
-              mkdir -p "$R$dep_dir"
-              if [ ! -f "$R$dep" ]; then
-                cp "$dep" "$R$dep_dir/"
-                echo "Copied icewm dependency: $dep"
-              fi
-            done
+            FILE_TYPE=$(file "$R/usr/bin/icewm" 2>/dev/null | grep -i "ELF")
+            if [ -n "$FILE_TYPE" ]; then
+              echo "=== Checking icewm dependencies ==="
+              ICEWM_DEPS=$(ldd "$R/usr/bin/icewm" 2>/dev/null | grep '=>' | awk '{print $3}' | grep -v '^$')
+              for dep in $ICEWM_DEPS; do
+                dep_dir=$(dirname "$dep")
+                mkdir -p "$R$dep_dir"
+                if [ ! -f "$R$dep" ]; then
+                  cp "$dep" "$R$dep_dir/"
+                  echo "Copied icewm dependency: $dep"
+                fi
+              done
+            fi
           fi
-          # Check and copy fluxbox dependencies
+          # Check and copy fluxbox dependencies (only for ELF binary)
           if [ -x "$R/usr/bin/fluxbox" ]; then
-            echo "=== Checking fluxbox dependencies ==="
-            FLUXBOX_DEPS=$(ldd "$R/usr/bin/fluxbox" 2>/dev/null | grep '=>' | awk '{print $3}' | grep -v '^$')
-            for dep in $FLUXBOX_DEPS; do
-              dep_dir=$(dirname "$dep")
-              mkdir -p "$R$dep_dir"
-              if [ ! -f "$R$dep" ]; then
-                cp "$dep" "$R$dep_dir/"
-                echo "Copied fluxbox dependency: $dep"
-              fi
-            done
+            FILE_TYPE=$(file "$R/usr/bin/fluxbox" 2>/dev/null | grep -i "ELF")
+            if [ -n "$FILE_TYPE" ]; then
+              echo "=== Checking fluxbox dependencies ==="
+              FLUXBOX_DEPS=$(ldd "$R/usr/bin/fluxbox" 2>/dev/null | grep '=>' | awk '{print $3}' | grep -v '^$')
+              for dep in $FLUXBOX_DEPS; do
+                dep_dir=$(dirname "$dep")
+                mkdir -p "$R$dep_dir"
+                if [ ! -f "$R$dep" ]; then
+                  cp "$dep" "$R$dep_dir/"
+                  echo "Copied fluxbox dependency: $dep"
+                fi
+              done
+            fi
           fi
           
           echo "=== Searching for real Xorg binary ==="
