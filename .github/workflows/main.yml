@@ -164,20 +164,26 @@ jobs:
           scripts/config --enable VGA_ARB
           scripts/config --enable DRM
           scripts/config --enable DRM_VGA16_FB
-          # Loop device support for squashfs mounting
+          # Loop device support for squashfs mounting - MUST be built-in (not module)
           for o in BLK_DEV_LOOP BLK_DEV_LOOP_MIN_COUNT; do
             scripts/config --enable "$o"
           done
-          # Squashfs filesystem support
+          # Force loop to be built-in (not module)
+          sed -i 's/^CONFIG_BLK_DEV_LOOP=.*/CONFIG_BLK_DEV_LOOP=y/' .config
+          # Squashfs filesystem support - MUST be built-in
           for o in SQUASHFS SQUASHFS_ZLIB SQUASHFS_LZMA SQUASHFS_XZ \
             SQUASHFS_LZO SQUASHFS_LZ4 SQUASHFS_ZSTD; do
             scripts/config --enable "$o"
           done
-          # Overlay filesystem support
+          # Force squashfs to be built-in
+          sed -i 's/^CONFIG_SQUASHFS=.*/CONFIG_SQUASHFS=y/' .config
+          # Overlay filesystem support - MUST be built-in
           for o in OVERLAY_FS OVERLAY_FS_INDEX OVERLAY_FS_REDIRECT_DIR \
             OVERLAY_FS_METACOPY OVERLAY_FS_REDIRECT_ALWAYS_FOLLOW; do
             scripts/config --enable "$o"
           done
+          # Force overlay to be built-in
+          sed -i 's/^CONFIG_OVERLAY_FS=.*/CONFIG_OVERLAY_FS=y/' .config
           # ISO9660 CD-ROM filesystem support
           for o in ISO9660_FS JOLIET TRANS TYPES DEVFS_FS; do
             scripts/config --enable "$o"
