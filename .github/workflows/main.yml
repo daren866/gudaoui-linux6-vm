@@ -62,13 +62,13 @@ jobs:
         uses: actions/cache@v4
         id: kernel-cache
         with:
-          path: linux-debian
+          path: linux-alpine
           key: >-
-            kernel-debian-${{
+            kernel-alpine-6.6.30-${{
               hashFiles('6.18.x-x86_64-build.conf')
             }}
           restore-keys: |
-            kernel-debian-
+            kernel-alpine-6.6.30-
 
       - name: Cache busybox
         uses: actions/cache@v4
@@ -94,21 +94,47 @@ jobs:
             git pkg-config squashfs-tools libmbedtls-dev \
             libdwarf-dev dwarves
 
-      - name: Download kernel
+      - name: Download Alpine Linux kernel
         if: steps.kernel-cache.outputs.cache-hit != 'true'
         run: |
-          echo "=== Downloading Linux kernel source ==="
-          wget -q https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.1.96.tar.xz
-          echo "=== Extracting kernel source ==="
-          tar xf linux-6.1.96.tar.xz
-          mv linux-6.1.96 linux-debian
-          ls -la linux-debian
+          echo "=== Downloading Alpine Linux kernel source ==="
+          # 从Alpine Linux获取稳定版内核源码
+          wget -q https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/x86_64/alpine-minirootfs-3.20.0-x86_64.tar.gz -O alpine-rootfs.tar.gz
+          # 获取Alpine Linux内核源码包
+          apk_url="https://dl-cdn.alpinelinux.org/alpine/v3.20/main/x86_64/"
+          # 下载linux-virt内核（Alpine专为虚拟机优化的内核）
+          wget -q "${apk_url}linux-virt-6.6.30-r0.apk" -O linux-virt.apk || true
+          # 如果没有预编译包，则下载官方内核源码
+          if [ ! -f linux-virt.apk ] || [ ! -s linux-virt.apk ]; then
+            echo "Downloading kernel source from kernel.org..."
+            wget -q https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.6.30.tar.xz -O linux.tar.xz
+            tar -xf linux.tar.xz
+            mv linux-6.6.30 linux-alpine
+          else
+            # 解压apk包获取内核
+            mkdir -p linux-alpine
+            tar -xzf linux-virt.apk -C linux-alpine || true
+            # 如果apk包含源码，使用它；否则下载官方源码
+            if [ ! -f linux-alpine/boot/vmlinuz-virt ]; then
+              wget -q https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.6.30.tar.xz -O linux.tar.xz
+              tar -xf linux.tar.xz
+              mv linux-6.6.30 linux-alpine
+            fi
+          fi
+          ls -la linux-alpine
 
       - name: Configure kernel
         run: |
-          cd linux-debian
-          # 使用Debian默认配置
-          cp /boot/config-$(uname -r) .config || make defconfig
+          cd linux-alpine
+          # 使用Alpine Linux默认配置（专为虚拟机优化）
+          make defconfig
+          # 如果有Alpine配置文件，使用它
+          if [ -f ../alpine-rootfs.tar.gz ]; then
+            mkdir -p /tmp/alpine
+            tar -xzf ../alpine-rootfs.tar.gz -C /tmp/alpine
+            # Alpine的内核配置通常在/boot下
+            cp /tmp/alpine/boot/config-* .config 2>/dev/null || make defconfig
+          fi
           # 启用必要的选项
           for o in VIRTIO VIRTIO_PCI VIRTIO_BLK; do
             scripts/config --enable "$o"
@@ -170,7 +196,7 @@ jobs:
 
       - name: Force modules
         run: |
-          cd linux-debian
+          cd linux-alpine
           for o in FAILOVER NET_FAILOVER \
             VIRTIO_NET VMXNET3; do
             sed -i "s/^CONFIG_${o}=.*/CONFIG_${o}=m/" .config
@@ -181,7 +207,7 @@ jobs:
 
       - name: Build kernel as deb-pkg
         run: |
-          cd linux-debian
+          cd linux-alpine
           HIT="${{ steps.kernel-cache.outputs.cache-hit }}"
           if [ -f arch/x86/boot/bzImage ] \
             && [ "$HIT" = "true" ]; then
@@ -204,13 +230,13 @@ jobs:
           sudo dpkg -i linux-image-*.deb linux-headers-*.deb 2>/dev/null || true
           echo "=== Kernel installed ==="
           ls -la /boot/vmlinuz* 2>/dev/null || true
-          cp /boot/vmlinuz-*-gudaoui "$WS/linux-debian/arch/x86/boot/bzImage" 2>/dev/null || true
-          ls -lh "$WS/linux-debian/arch/x86/boot/bzImage"
+          cp /boot/vmlinuz-*-gudaoui "$WS/linux-alpine/arch/x86/boot/bzImage" 2>/dev/null || true
+          ls -lh "$WS/linux-alpine/arch/x86/boot/bzImage"
 
       - name: Build modules tarball
         run: |
           WS="$GITHUB_WORKSPACE"
-          cd "$WS/linux-debian"
+          cd "$WS/linux-alpine"
           if [ -f modules.tar.gz ]; then
             echo "Modules exist, skipping"
           else
@@ -218,8 +244,8 @@ jobs:
             mkdir -p ../modules-install
             make modules_install INSTALL_MOD_PATH=../modules-install
             cd ../modules-install
-            tar -czf ../linux-debian/modules.tar.gz lib
-            cd ../linux-debian
+            tar -czf ../linux-alpine/modules.tar.gz lib
+            cd ../linux-alpine
             rm -rf ../modules-install
           fi
           du -h modules.tar.gz
@@ -410,8 +436,8 @@ jobs:
           cd "$WS"
           cp -a "$WS/python-root/"* "$R/"
 
-          [ -f "$WS/linux-debian/modules.tar.gz" ] \
-            && tar -xzf "$WS/linux-debian/modules.tar.gz" -C "$R/"
+          [ -f "$WS/linux-alpine/modules.tar.gz" ] \
+            && tar -xzf "$WS/linux-alpine/modules.tar.gz" -C "$R/"
 
           [ -f "$R/usr/local/bin/micropython" ] || {
             echo "ERROR: micropython missing"; exit 1; }
@@ -748,7 +774,7 @@ jobs:
         run: |
           WS="$GITHUB_WORKSPACE"
           mkdir -p "$WS/iso/boot/grub"
-          cp "$WS/linux-debian/arch/x86/boot/bzImage" "$WS/iso/boot/vmlinuz"
+          cp "$WS/linux-alpine/arch/x86/boot/bzImage" "$WS/iso/boot/vmlinuz"
           cp "$WS/initramfs.cpio.gz" "$WS/iso/boot/"
           cp "$WS/rootfs.squashfs" "$WS/iso/boot/"
 
