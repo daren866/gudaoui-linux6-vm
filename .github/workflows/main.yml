@@ -168,66 +168,75 @@ jobs:
           for o in BLK_DEV_LOOP BLK_DEV_LOOP_MIN_COUNT; do
             scripts/config --enable "$o"
           done
-          # Force loop to be built-in (not module)
-          sed -i 's/^CONFIG_BLK_DEV_LOOP=.*/CONFIG_BLK_DEV_LOOP=y/' .config
-          # Squashfs filesystem support - MUST be built-in
-          for o in SQUASHFS SQUASHFS_ZLIB SQUASHFS_LZMA SQUASHFS_XZ \
-            SQUASHFS_LZO SQUASHFS_LZ4 SQUASHFS_ZSTD; do
-            scripts/config --enable "$o"
-          done
-          # Force squashfs to be built-in
-          sed -i 's/^CONFIG_SQUASHFS=.*/CONFIG_SQUASHFS=y/' .config
-          # Overlay filesystem support - MUST be built-in
-          for o in OVERLAY_FS OVERLAY_FS_INDEX OVERLAY_FS_REDIRECT_DIR \
-            OVERLAY_FS_METACOPY OVERLAY_FS_REDIRECT_ALWAYS_FOLLOW; do
-            scripts/config --enable "$o"
-          done
-          # Force overlay to be built-in
-          sed -i 's/^CONFIG_OVERLAY_FS=.*/CONFIG_OVERLAY_FS=y/' .config
-          # ISO9660 CD-ROM filesystem support
-          for o in ISO9660_FS JOLIET TRANS TYPES DEVFS_FS; do
-            scripts/config --enable "$o"
-          done
-          # CD-ROM and storage drivers
-          for o in ATA PATA_ACPI ATA_PIIX ATA_GENERIC ATAPI; do
-            scripts/config --enable "$o"
-          done
-          scripts/config --enable SCSI_CDROM
-          scripts/config --enable BLK_DEV_CDROM
-          scripts/config --enable CDROM_PKTCDVD
-          for o in SOUND USB_SUPPORT WLAN; do
-            scripts/config --disable "$o"
-          done
-          # 禁用所有调试信息相关选项（避免dwarf.h依赖问题）
-          scripts/config --disable DEBUG_INFO
-          scripts/config --disable DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT
-          scripts/config --disable DEBUG_INFO_DWARF4
-          scripts/config --disable DEBUG_INFO_DWARF5
-          scripts/config --disable DEBUG_INFO_BTF
-          scripts/config --disable DEBUG_INFO_BTF_MODULES
-          scripts/config --disable DEBUG_INFO_REDUCED
-          scripts/config --disable DEBUG_INFO_SPLIT
-          scripts/config --disable DEBUG_KERNEL
-          scripts/config --disable DEBUG_INFO_NONE
-          scripts/config --disable DEBUG_INFO_COMPRESSED
-          scripts/config --disable FRAME_POINTER
-          scripts/config --disable KALLSYMS
-          scripts/config --disable KALLSYMS_ALL
-          scripts/config --disable STACK_VALIDATION
-          scripts/config --disable GDB_SCRIPTS
-          # Force disable gendwarfksyms build using sed
-          for o in DEBUG_INFO DEBUG_INFO_NONE \
-            DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT \
-            DEBUG_INFO_DWARF4 DEBUG_INFO_DWARF5 \
-            DEBUG_INFO_REDUCED DEBUG_INFO_SPLIT \
-            DEBUG_INFO_COMPRESSED DEBUG_INFO_BTF \
-            DEBUG_INFO_BTF_MODULES DEBUG_KERNEL \
-            STACK_VALIDATION FRAME_POINTER \
-            KALLSYMS KALLSYMS_ALL GDB_SCRIPTS; do
-            sed -i "s/^CONFIG_${o}=.*/CONFIG_${o}=n/" .config
-            grep -q "^CONFIG_${o}=n" .config \
-              || echo "CONFIG_${o}=n" >> .config
-          done
+          # Add all required options directly to .config
+          cat >> .config << 'EOL'
+CONFIG_BLK_DEV_LOOP=y
+CONFIG_BLK_DEV_LOOP_MIN_COUNT=8
+CONFIG_SQUASHFS=y
+CONFIG_SQUASHFS_ZLIB=y
+CONFIG_SQUASHFS_LZMA=y
+CONFIG_SQUASHFS_XZ=y
+CONFIG_SQUASHFS_LZO=y
+CONFIG_SQUASHFS_LZ4=y
+CONFIG_SQUASHFS_ZSTD=y
+CONFIG_OVERLAY_FS=y
+CONFIG_OVERLAY_FS_INDEX=y
+CONFIG_OVERLAY_FS_REDIRECT_DIR=y
+CONFIG_OVERLAY_FS_METACOPY=y
+CONFIG_OVERLAY_FS_REDIRECT_ALWAYS_FOLLOW=y
+CONFIG_ISO9660_FS=y
+CONFIG_JOLIET=y
+CONFIG_EFI=y
+CONFIG_EFI_STUB=y
+CONFIG_EFI_VARS=y
+CONFIG_FB=y
+CONFIG_FB_SIMPLE=y
+CONFIG_FB_CFB_FILLRECT=y
+CONFIG_FB_CFB_COPYAREA=y
+CONFIG_FB_CFB_IMAGEBLIT=y
+CONFIG_FB_SYS_FILLRECT=y
+CONFIG_FB_SYS_COPYAREA=y
+CONFIG_FB_SYS_IMAGEBLIT=y
+CONFIG_VESA_FB=y
+CONFIG_VGA_CONSOLE=y
+CONFIG_VGA_ARB=y
+CONFIG_DRM=y
+CONFIG_DRM_VGA16_FB=y
+EOL
+          # Disable debug info to avoid dwarf.h issues
+          cat >> .config << 'EOL'
+CONFIG_DEBUG_INFO=n
+CONFIG_DEBUG_INFO_NONE=n
+CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT=n
+CONFIG_DEBUG_INFO_DWARF4=n
+CONFIG_DEBUG_INFO_DWARF5=n
+CONFIG_DEBUG_INFO_BTF=n
+CONFIG_DEBUG_INFO_BTF_MODULES=n
+CONFIG_DEBUG_INFO_REDUCED=n
+CONFIG_DEBUG_INFO_SPLIT=n
+CONFIG_DEBUG_INFO_COMPRESSED=n
+CONFIG_DEBUG_KERNEL=n
+CONFIG_FRAME_POINTER=n
+CONFIG_KALLSYMS=n
+CONFIG_KALLSYMS_ALL=n
+CONFIG_STACK_VALIDATION=n
+CONFIG_GDB_SCRIPTS=n
+EOL
+          make olddefconfig
+          # Add CD-ROM and storage driver support
+          cat >> .config << 'EOL'
+CONFIG_ATA=y
+CONFIG_PATA_ACPI=y
+CONFIG_ATA_PIIX=y
+CONFIG_ATA_GENERIC=y
+CONFIG_ATAPI=y
+CONFIG_SCSI_CDROM=y
+CONFIG_BLK_DEV_CDROM=y
+CONFIG_CDROM_PKTCDVD=y
+CONFIG_SOUND=n
+CONFIG_USB_SUPPORT=n
+CONFIG_WLAN=n
+EOL
           make olddefconfig
 
       - name: Force modules
