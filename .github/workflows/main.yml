@@ -1,4 +1,3 @@
----
 name: Build Linux Kernel 6.18 with BusyBox
 
 on:
@@ -57,6 +56,7 @@ jobs:
           echo "iso_name=$I" >> "$GITHUB_OUTPUT"
           echo "RELEASE_TITLE=$T" >> "$GITHUB_ENV"
           echo "ISO_NAME=$I" >> "$GITHUB_ENV"
+
       - name: Cache kernel
         uses: actions/cache@v4
         id: kernel-cache
@@ -68,6 +68,7 @@ jobs:
             }}
           restore-keys: |
             kernel-6.18-
+
       - name: Cache busybox
         uses: actions/cache@v4
         id: busybox-cache
@@ -81,6 +82,7 @@ jobs:
             }}
           restore-keys: |
             busybox-1.36.1-v2-normal-
+
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -89,11 +91,13 @@ jobs:
             libssl-dev libelf-dev bc wget cpio xorriso \
             grub-pc-bin grub-common mtools dosfstools \
             git pkg-config squashfs-tools libmbedtls-dev
+
       - name: Download kernel
         if: steps.kernel-cache.outputs.cache-hit != 'true'
         run: |
           wget -q https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.tar.xz
           tar -xf linux-6.18.tar.xz
+
       - name: Configure kernel
         run: |
           cd linux-6.18
@@ -119,6 +123,7 @@ jobs:
             scripts/config --disable "$o"
           done
           make olddefconfig
+
       - name: Force modules
         run: |
           cd linux-6.18
@@ -129,6 +134,7 @@ jobs:
               || echo "CONFIG_${o}=m" >> .config
           done
           make olddefconfig
+
       - name: Build kernel
         run: |
           cd linux-6.18
@@ -142,6 +148,7 @@ jobs:
             echo "Built in $(( ($(date +%s)-S)/60 )) min"
           fi
           ls -lh arch/x86/boot/bzImage
+
       - name: Build modules
         run: |
           cd linux-6.18
@@ -167,11 +174,13 @@ jobs:
             echo "Built in $(( ($(date +%s)-S)/60 )) min"
           fi
           du -h modules.tar.gz
+
       - name: Download BusyBox
         if: steps.busybox-cache.outputs.cache-hit != 'true'
         run: |
           wget -q https://busybox.net/downloads/busybox-1.36.1.tar.bz2
           tar -xf busybox-1.36.1.tar.bz2
+
       - name: Configure BusyBox
         run: |
           echo "=== Step 1: defconfig ==="
@@ -246,6 +255,7 @@ jobs:
             exit 1
           fi
           echo "=== Configure BusyBox DONE ==="
+
       - name: Build BusyBox
         run: |
           cd busybox-1.36.1
@@ -264,6 +274,7 @@ jobs:
           echo "=== Verifying busybox applets ==="
           ./busybox --list | grep -E "^(cut|tr|grep|sed|awk|head|tail|ip|udhcpc)$" || echo "Some applets missing!"
           ./busybox --list-full | head -20
+
       - name: Build MicroPython
         run: |
           mkdir -p python-root/usr/local/bin python-root/home
@@ -307,6 +318,7 @@ jobs:
           ln -sf micropython python3
           cd "$GITHUB_WORKSPACE"
           du -h python-root/usr/local/bin/micropython
+
       - name: Install common Linux base libraries
         run: |
           WS="$GITHUB_WORKSPACE"
@@ -539,6 +551,7 @@ jobs:
           printf '%s\n' 'proc    /proc    proc    defaults    0 0' 'sysfs   /sys     sysfs   defaults    0 0' 'devtmpfs /dev    devtmpfs defaults  0 0' 'tmpfs   /tmp     tmpfs   defaults    0 0' 'tmpfs   /run     tmpfs   defaults    0 0' 'tmpfs   /dev/shm tmpfs   defaults    0 0' > "$R/etc/fstab"
           printf '%s\n' 'export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin' 'export TERM=linux' "export PS1='\\u@\\h:\\w\\\$ '" "alias ll='ls -la'" "alias python='micropython'" > "$R/etc/profile"
           echo "rootfs: $(du -sh "$R" | cut -f1)"
+
       - name: Download X11 packages
         if: env.DESKTOP != 'none'
         run: |
@@ -572,6 +585,7 @@ jobs:
           ls -la twm*.deb 2>/dev/null || echo "No twm packages found"
           echo "=== Twm package details ==="
           dpkg-deb -I twm*.deb 2>/dev/null || echo "Cannot inspect twm deb"
+
       - name: Install desktop into rootfs
         if: env.DESKTOP != 'none'
         run: |
@@ -587,159 +601,59 @@ jobs:
           done
           echo "Extracted $EX debs"
           
-          echo "=== Checking TWM installation ==="
-          ls -la "$R/usr/bin/twm" 2>/dev/null || echo "TWM binary NOT FOUND in rootfs"
-          which twm 2>/dev/null && echo "TWM found on host" || echo "TWM NOT found on host"
-          file "$R/usr/bin/twm" 2>/dev/null || echo "TWM file info failed"
-          # Check TWM dependencies and copy missing libs (only for ELF binary)
-          if [ -x "$R/usr/bin/twm" ]; then
-            FILE_TYPE=$(file "$R/usr/bin/twm" 2>/dev/null | grep -i "ELF")
-            if [ -n "$FILE_TYPE" ]; then
-              echo "=== Checking TWM dependencies ==="
-              TWM_DEPS=$(ldd "$R/usr/bin/twm" 2>/dev/null | grep '=>' | awk '{print $3}' | grep -E '^/' | grep -v '^$')
-              for dep in $TWM_DEPS; do
-                if [ -f "$dep" ]; then
-                  dep_dir=$(dirname "$dep")
-                  mkdir -p "$R$dep_dir"
-                  if [ ! -f "$R$dep" ]; then
-                    cp "$dep" "$R$dep_dir/"
-                    echo "Copied TWM dependency: $dep"
-                  fi
-                fi
-              done
-              # Verify TWM can run
-              echo "=== Verifying TWM dependencies in rootfs ==="
-              for dep in $TWM_DEPS; do
-                if [ -f "$R$dep" ]; then
-                  echo "OK: $dep"
-                else
-                  echo "MISSING: $dep"
-                fi
-              done
+          # === 修复1：显式复制X11客户端核心库（解决依赖缺失）===
+          echo "=== Copying X11 client libraries ==="
+          X11_LIBS="libX11.so.6 libXext.so.6 libXmu.so.6 libXt.so.6 libXaw.so.7 libXpm.so.4"
+          for lib in $X11_LIBS; do
+            # 查找宿主机上的库（优先从x86_64-linux-gnu目录）
+            HOST_LIB=$(find /usr/lib /usr/lib/x86_64-linux-gnu -name "$lib" 2>/dev/null | head -1)
+            if [ -n "$HOST_LIB" ]; then
+              TARGET_DIR="$R$(dirname "$HOST_LIB")"
+              mkdir -p "$TARGET_DIR"
+              cp "$HOST_LIB" "$TARGET_DIR/"
+              echo "Copied X11 client lib: $lib"
             else
-              echo "TWM is not an ELF binary, skipping ldd check"
-            fi
-          fi
-          echo "=== Checking Xorg installation ==="
-          ls -la "$R/usr/bin/Xorg" 2>/dev/null || echo "Xorg binary not found"
-          ls -la "$R/usr/lib/xorg/" 2>/dev/null || echo "Xorg directory not found"
-          file "$R/usr/bin/Xorg" 2>/dev/null || echo "Xorg file info failed"
-          
-          # Find the real Xorg binary (wrapper script -> real binary)
-          XORG_REAL=""
-          for path in "$R/usr/lib/x86_64-linux-gnu/xorg/Xorg" "$R/usr/lib/xorg/Xorg" "$R/usr/bin/Xorg.real" "$R/usr/lib/xserver-xorg-core/Xorg"; do
-            if [ -f "$path" ]; then
-              FILE_TYPE=$(file "$path" 2>/dev/null | grep -i "ELF")
-              if [ -n "$FILE_TYPE" ]; then
-                echo "Found real Xorg binary: $path"
-                XORG_REAL="$path"
-                break
-              fi
+              echo "WARNING: X11 client lib not found: $lib"
             fi
           done
           
-          # Check and copy Xorg dependencies (only for ELF binary)
-          if [ -n "$XORG_REAL" ] && [ -f "$XORG_REAL" ]; then
-            echo "=== Checking Xorg dependencies ==="
-            XORG_DEPS=$(ldd "$XORG_REAL" 2>/dev/null | grep '=>' | awk '{print $3}' | grep -E '^/' | grep -v '^$')
-            for dep in $XORG_DEPS; do
-              if [ -f "$dep" ]; then
-                dep_dir=$(dirname "$dep")
-                mkdir -p "$R$dep_dir"
-                if [ ! -f "$R$dep" ]; then
-                  cp "$dep" "$R$dep_dir/"
-                  echo "Copied Xorg dependency: $dep"
-                fi
-              fi
-            done
-          fi
-          # Check and copy xterm dependencies (only for ELF binary)
-          if [ -x "$R/usr/bin/xterm" ]; then
-            FILE_TYPE=$(file "$R/usr/bin/xterm" 2>/dev/null | grep -i "ELF")
-            if [ -n "$FILE_TYPE" ]; then
-              echo "=== Checking xterm dependencies ==="
-              XTERM_DEPS=$(ldd "$R/usr/bin/xterm" 2>/dev/null | grep '=>' | awk '{print $3}' | grep -E '^/' | grep -v '^$')
-              for dep in $XTERM_DEPS; do
-                if [ -f "$dep" ]; then
-                  dep_dir=$(dirname "$dep")
-                  mkdir -p "$R$dep_dir"
-                  if [ ! -f "$R$dep" ]; then
-                    cp "$dep" "$R$dep_dir/"
-                    echo "Copied xterm dependency: $dep"
-                  fi
-                fi
-              done
-            fi
-          fi
-          # Check and copy icewm dependencies (only for ELF binary)
-          if [ -x "$R/usr/bin/icewm" ]; then
-            FILE_TYPE=$(file "$R/usr/bin/icewm" 2>/dev/null | grep -i "ELF")
-            if [ -n "$FILE_TYPE" ]; then
-              echo "=== Checking icewm dependencies ==="
-              ICEWM_DEPS=$(ldd "$R/usr/bin/icewm" 2>/dev/null | grep '=>' | awk '{print $3}' | grep -E '^/' | grep -v '^$')
-              for dep in $ICEWM_DEPS; do
-                if [ -f "$dep" ]; then
-                  dep_dir=$(dirname "$dep")
-                  mkdir -p "$R$dep_dir"
-                  if [ ! -f "$R$dep" ]; then
-                    cp "$dep" "$R$dep_dir/"
-                    echo "Copied icewm dependency: $dep"
-                  fi
-                fi
-              done
-            fi
-          fi
-          # Check and copy fluxbox dependencies (only for ELF binary)
-          if [ -x "$R/usr/bin/fluxbox" ]; then
-            FILE_TYPE=$(file "$R/usr/bin/fluxbox" 2>/dev/null | grep -i "ELF")
-            if [ -n "$FILE_TYPE" ]; then
-              echo "=== Checking fluxbox dependencies ==="
-              FLUXBOX_DEPS=$(ldd "$R/usr/bin/fluxbox" 2>/dev/null | grep '=>' | awk '{print $3}' | grep -E '^/' | grep -v '^$')
-              for dep in $FLUXBOX_DEPS; do
-                if [ -f "$dep" ]; then
-                  dep_dir=$(dirname "$dep")
-                  mkdir -p "$R$dep_dir"
-                  if [ ! -f "$R$dep" ]; then
-                    cp "$dep" "$R$dep_dir/"
-                    echo "Copied fluxbox dependency: $dep"
-                  fi
-                fi
-              done
-            fi
+          # === 修复2：优化Xorg软件渲染配置（适配VM虚拟机）===
+          echo "=== Setting up gdui-twm X11 configuration (software rendering) ==="
+          mkdir -p "$R/etc/X11/xorg.conf.d"
+          printf '%s\n' '# GudaoUI TWM Configuration' '# Pure software rendering, no GPU/hardware dependency' 'Section "ServerFlags"' '  Option "AIGLX" "false"' '  Option "GLX" "false"' '  Option "DRI" "false"' '  Option "LegacySVG" "false"' '  Option "DefaultServerLayout" "Layout"' 'EndSection' '' 'Section "ServerLayout"' '  Identifier "Layout"' '  Screen "Screen0"' '  InputDevice "Mouse0" "CorePointer"' '  InputDevice "Keyboard0" "CoreKeyboard"' 'EndSection' '' 'Section "Device"' '  Identifier "Videocard0"' '  Driver "fbdev"' '  # Use framebuffer for VM (no GPU dependency)' '  Option "NoAccel" "true"' '  # Disable all hardware acceleration' '  Option "SWcursor" "false"' '  # Disable software cursor' 'EndSection' '' 'Section "Monitor"' '  Identifier "Monitor0"' '  ModelName "1024x768"' '  HorizSync 31.5-64.3' '  VertRefresh 50-90' '  Modeline "1024x768" 65.00 1024 1048 1184 1344 768 771 777 806 -HSync -VSync' '  Option "PreferredMode" "1024x768"' 'EndSection' '' 'Section "Screen"' '  Identifier "Screen0"' '  Device "Videocard0"' '  Monitor "Monitor0"' '  DefaultDepth 24' '  SubSection "Display"' '    Depth 24' '    Modes "1024x768"' '  EndSubSection' 'EndSection' '' 'Section "InputDevice"' '  Identifier "Mouse0"' '  Driver "mouse"' '  Option "Protocol" "auto"' '  Option "Device" "/dev/input/mice"' 'EndSection' '' 'Section "InputDevice"' '  Identifier "Keyboard0"' '  Driver "kbd"' '  Option "XkbLayout" "us"' 'EndSection' > "$R/etc/X11/xorg.conf.d/gdui-twm.conf"
+          echo "Created gdui-twm.conf: software rendering, 1024x768, no HW accel"
+          
+          # === 修复3：确保DISPLAY环境变量正确设置（X客户端连接关键）===
+          echo "=== Updating init script to set DISPLAY environment variable ==="
+          # 修改init脚本，添加DISPLAY=:0
+          sed -i 's/export HOME="${HOME:-\/root}"$/export HOME="${HOME:-\/root}"\nexport DISPLAY=:0/' "$R/init"
+          
+          # === 修复4：生成Xauth授权文件（解决权限问题）===
+          echo "=== Generating Xauth file for X11 authorization ==="
+          printf '%s\n' '#!/bin/sh' 'export HOME=/root DISPLAY=:0' 'export XDG_SESSION_TYPE=x11' 'export XDG_CURRENT_DESKTOP=GudaoUI' '# llvmpipe CPU software rendering' 'export LIBGL_ALWAYS_SOFTWARE=1' 'export MESA_LOADER_DRIVER_OVERRIDE=llvmpipe' 'export MESA_GL_VERSION_OVERRIDE=3.3' 'WM="${1:-twm}"' 'case "$WM" in' '  icewm) printf '"'"'#!/bin/sh\nexport DISPLAY=:0\nexec icewm --replace\n'"'"' > /root/.xinitrc ;;' '  fluxbox) printf '"'"'#!/bin/sh\nexport DISPLAY=:0\nexec fluxbox\n'"'"' > /root/.xinitrc ;;' '  *) printf '"'"'#!/bin/sh\nexport DISPLAY=:0\nexec twm\n'"'"' > /root/.xinitrc ;;' 'esac' '/bin/busybox chmod +x /root/.xinitrc' 'if [ -x /usr/bin/startx ]; then exec startx' 'elif [ -x /usr/bin/xinit ]; then exec xinit -- /usr/bin/Xorg :0' 'else echo "ERROR: no X init"; exit 1; fi' > "$R/usr/local/bin/start-desktop"
+          chmod +x "$R/usr/local/bin/start-desktop"
+          
+          # 生成Xauth文件（确保X客户端有权限）
+          printf '%s\n' '#!/bin/sh' 'export HOME=/root DISPLAY=:0' 'export XDG_SESSION_TYPE=x11' 'export XDG_CURRENT_DESKTOP=GudaoUI' '# llvmpipe CPU software rendering' 'export LIBGL_ALWAYS_SOFTWARE=1' 'export MESA_LOADER_DRIVER_OVERRIDE=llvmpipe' 'export MESA_GL_VERSION_OVERRIDE=3.3' 'XAUTH="$HOME/.Xauthority"' 'touch "$XAUTH" && chmod 600 "$XAUTH"' 'CK=$(/bin/busybox head -c 16 /dev/urandom | /bin/busybox od -An -tx1 | /bin/busybox tr -d " \\n")' '[ -n "$CK" ] && {' "  printf '\\x00' >> \"\$XAUTH\"" "  printf '%s' \"\$DISPLAY\" >> \"\$XAUTH\"" "  printf '\\x00' >> \"\$XAUTH\"" "  printf '%s' 'MIT-MAGIC-COOKIE-1' >> \"\$XAUTH\"" "  printf '\\x00' >> \"\$XAUTH\"" "  printf '%04d' 16 >> \"\$XAUTH\"" "  printf '%s' \"\$CK\" >> \"\$XAUTH\"" '}' 'echo "=== Initializing Xorg (llvmpipe CPU rendering) ==="' 'if [ ! -e /usr/lib/xorg/Xorg ] && [ -x /usr/bin/Xorg ]; then' '  echo "Creating Xorg symlink: /usr/lib/xorg/Xorg -> /usr/bin/Xorg"' '  mkdir -p /usr/lib/xorg' '  /bin/busybox ln -sf /usr/bin/Xorg /usr/lib/xorg/Xorg' 'fi' '/bin/busybox killall Xorg 2>/dev/null' '/bin/busybox killall X 2>/dev/null' 'sleep 1' 'XORG=""' 'if [ -x /usr/bin/Xorg ]; then' '  XORG="/usr/bin/Xorg"' 'elif [ -x /usr/lib/xorg/Xorg ]; then' '  XORG="/usr/lib/xorg/Xorg"' 'elif [ -x /usr/bin/X ]; then' '  XORG="/usr/bin/X"' 'fi' 'if [ -n "$XORG" ]; then' '  echo "Starting Xorg: $XORG"' '  "$XORG" "$DISPLAY" &' 'else' '  echo "ERROR: No X server found"; exit 1' 'fi' 'T=0' 'while [ $T -lt 10 ]; do' '  /bin/busybox pgrep Xorg >/dev/null 2>&1 && break' '  /bin/busybox pgrep X >/dev/null 2>&1 && break' '  sleep 1; T=$((T+1))' 'done' '/bin/busybox pgrep Xorg >/dev/null 2>&1 || /bin/busybox pgrep X >/dev/null 2>&1 || { echo "ERROR: X failed"; exit 1; }' 'echo "X started on $DISPLAY"' '[ -x "$HOME/.xinitrc" ] && exec "$HOME/.xinitrc"' 'exec xterm' > "$R/usr/bin/startx"
+          chmod +x "$R/usr/bin/startx"
+          
+          # === 修复5：确保Xorg二进制文件正确链接 ===
+          echo "=== Ensuring Xorg binary symlink ==="
+          if [ -x "$R/usr/bin/Xorg" ]; then
+            mkdir -p "$R/usr/lib/xorg"
+            ln -sf /usr/bin/Xorg "$R/usr/lib/xorg/Xorg"
+            echo "Created Xorg symlink: /usr/lib/xorg/Xorg -> /usr/bin/Xorg"
+          else
+            echo "WARNING: Xorg binary not found in /usr/bin/Xorg"
           fi
           
-          echo "=== Searching for real Xorg binary ==="
-          XORG_BIN=""
-          for path in "$R/usr/lib/x86_64-linux-gnu/xorg/Xorg" "$R/usr/lib/xorg/Xorg" "$R/usr/bin/Xorg.real" "$R/usr/lib/xserver-xorg-core/Xorg" "$R/usr/bin/Xorg"; do
-            if [ -x "$path" ]; then
-              FILE_TYPE=$(file "$path" 2>/dev/null | grep -i "ELF")
-              if [ -n "$FILE_TYPE" ] || [ "$path" = "$R/usr/bin/Xorg" ]; then
-                echo "Found real Xorg at: $path"
-                XORG_BIN="$path"
-                break
-              fi
-            fi
-          done
-          
-          if [ -z "$XORG_BIN" ]; then
-            echo "WARNING: Searching for Xorg..."
-            find "$R/usr" -name "Xorg" -type f 2>/dev/null | head -10
-          fi
+          # === 修复6：确保ld.so.conf正确配置 ===
+          echo "=== Configuring ld.so.conf ==="
           printf '%s\n' '/lib/x86_64-linux-gnu' '/usr/lib/x86_64-linux-gnu' '/lib64' '/usr/lib64' '/lib' '/usr/lib' > "$R/etc/ld.so.conf"
           chmod 644 "$R/etc/ld.so.conf"
-          # Copy ldconfig if available
-          if [ -x /usr/sbin/ldconfig ]; then
-            cp /usr/sbin/ldconfig "$R/usr/sbin/ldconfig" 2>/dev/null || true
-            chmod +x "$R/usr/sbin/ldconfig" 2>/dev/null || true
-          fi
-          if [ -x /sbin/ldconfig ]; then
-            cp /sbin/ldconfig "$R/sbin/ldconfig" 2>/dev/null || true
-            chmod +x "$R/sbin/ldconfig" 2>/dev/null || true
-          fi
-          # Run ldconfig in rootfs if possible
-          [ -x "$R/usr/sbin/ldconfig" ] && sudo chroot "$R" /usr/sbin/ldconfig 2>/dev/null || true
-          [ -x "$R/sbin/ldconfig" ] && sudo chroot "$R" /sbin/ldconfig 2>/dev/null || true
-          # Copy dynamic linker (ld-linux)
+          
+          # === 修复7：确保动态链接器正确复制 ===
+          echo "=== Copying dynamic linker ==="
           for ld in /lib64/ld-linux-x86-64.so.2 /lib/ld-linux-x86-64.so.2 /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2; do
             if [ -f "$ld" ]; then
               mkdir -p "$R$(dirname $ld)"
@@ -749,67 +663,20 @@ jobs:
             fi
           done
           
-          echo "=== Creating library symlinks from /usr/lib/x86_64-linux-gnu to /usr/lib ==="
-          if [ -d "$R/usr/lib/x86_64-linux-gnu" ]; then
-            cd "$R/usr/lib"
-            for lib in "$R/usr/lib/x86_64-linux-gnu/"*.so*; do
-              [ -f "$lib" ] || continue
-              libname=$(basename "$lib")
-              if [ ! -e "$libname" ] && [ ! -L "$libname" ]; then
-                ln -sf "x86_64-linux-gnu/$libname" "$libname"
-                echo "Created symlink: $libname -> x86_64-linux-gnu/$libname"
-              fi
-            done
-          else
-            echo "WARNING: /usr/lib/x86_64-linux-gnu not found"
-          fi
-          mkdir -p "$R/usr/lib/xorg"
-          if [ -n "$XORG_BIN" ]; then
-            echo "Creating symlink: /usr/lib/xorg/Xorg -> $XORG_BIN"
-            rm -f "$R/usr/lib/xorg/Xorg"
-            ln -sf "$XORG_BIN" "$R/usr/lib/xorg/Xorg"
-          elif [ -x "$R/usr/bin/Xorg" ]; then
-            echo "WARNING: /usr/bin/Xorg exists but no real Xorg binary found, linking wrapper"
-            rm -f "$R/usr/lib/xorg/Xorg"
-            ln -sf /usr/bin/Xorg "$R/usr/lib/xorg/Xorg"
-          fi
-          
-          echo "=== Final Xorg setup ==="
-          ls -la "$R/usr/lib/xorg/Xorg" 2>/dev/null || echo "Xorg symlink not created"
-          ls -la "$R/usr/bin/Xorg" 2>/dev/null || echo "Xorg wrapper not found"
-          
-          # Configure X11 for software rendering (gdui-twm.conf)
-          echo "=== Setting up gdui-twm X11 configuration ==="
-          mkdir -p "$R/etc/X11/xorg.conf.d"
-          # gdui-twm.conf: No GPU dependency, no HW acceleration, no SW cursor, 1024x768
-          printf '%s\n' '# GudaoUI TWM Configuration' '# Pure software rendering, no GPU/hardware dependency' 'Section "ServerFlags"' '  Option "AIGLX" "false"' '  Option "GLX" "false"' '  Option "DRI" "false"' '  Option "LegacySVG" "false"' '  Option "DefaultServerLayout" "Layout"' 'EndSection' '' 'Section "ServerLayout"' '  Identifier "Layout"' '  Screen "Screen0"' '  InputDevice "Mouse0" "CorePointer"' '  InputDevice "Keyboard0" "CoreKeyboard"' 'EndSection' '' 'Section "Device"' '  Identifier "Videocard0"' '  Driver "fbdev"' '  # No vendor-specific drivers, use framebuffer' '  Option "NoAccel" "true"' '  # Disable all hardware acceleration' '  Option "SWcursor" "false"' '  # Disable software cursor' 'EndSection' '' 'Section "Monitor"' '  Identifier "Monitor0"' '  ModelName "1024x768"' '  HorizSync 31.5-64.3' '  VertRefresh 50-90' '  Modeline "1024x768" 65.00 1024 1048 1184 1344 768 771 777 806 -HSync -VSync' '  Option "PreferredMode" "1024x768"' 'EndSection' '' 'Section "Screen"' '  Identifier "Screen0"' '  Device "Videocard0"' '  Monitor "Monitor0"' '  DefaultDepth 24' '  SubSection "Display"' '    Depth 24' '    Modes "1024x768"' '  EndSubSection' 'EndSection' '' 'Section "InputDevice"' '  Identifier "Mouse0"' '  Driver "mouse"' '  Option "Protocol" "auto"' '  Option "Device" "/dev/ttyS0"' 'EndSection' '' 'Section "InputDevice"' '  Identifier "Keyboard0"' '  Driver "kbd"' '  Option "XkbLayout" "us"' 'EndSection' > "$R/etc/X11/xorg.conf.d/gdui-twm.conf"
-          echo "Created gdui-twm.conf: software rendering, 1024x768, no HW accel"
-          
-          # Ensure DRI drivers directory exists
-          mkdir -p "$R/usr/lib/dri" "$R/usr/lib/x86_64-linux-gnu/dri"
-          # Copy llvmpipe DRI driver if available
-          for dri_path in /usr/lib/dri /usr/lib/x86_64-linux-gnu/dri; do
-            if [ -d "$dri_path" ]; then
-              echo "Copying DRI drivers from $dri_path"
-              cp -a "$dri_path"/* "$R/usr/lib/dri/" 2>/dev/null || true
-              cp -a "$dri_path"/* "$R/usr/lib/x86_64-linux-gnu/dri/" 2>/dev/null || true
-            fi
-          done
-          ls -la "$R/usr/lib/dri/" 2>/dev/null | head -20 || echo "No DRI drivers found"
-          
+          # === 修复8：创建必要的目录结构 ===
+          echo "=== Creating necessary directories ==="
           mkdir -p "$R/etc/X11/xinit" "$R/root"
           printf '%s\n' '#!/bin/sh' '[ -f "$HOME/.xinitrc" ] && exec "$HOME/.xinitrc"' 'exec xterm' > "$R/etc/X11/xinit/xinitrc"
           chmod +x "$R/etc/X11/xinit/xinitrc"
           printf '%s\n' '#!/bin/sh' 'export DISPLAY=:0' 'export XDG_SESSION_TYPE=x11' 'export XDG_CURRENT_DESKTOP=GudaoUI' 'xterm -geometry 100x30+50+50 -bg black -fg green -title "GudaoUI" &' 'sleep 1' '[ -n "$WM_CMD" ] && exec $WM_CMD' > "$R/root/.xinitrc"
           chmod +x "$R/root/.xinitrc"
-          printf '%s\n' '#!/bin/sh' 'export HOME="${HOME:-/root}"' 'export DISPLAY="${DISPLAY:-:0}"' 'export XDG_SESSION_TYPE=x11' '# llvmpipe CPU software rendering' 'export LIBGL_ALWAYS_SOFTWARE=1' 'export MESA_LOADER_DRIVER_OVERRIDE=llvmpipe' 'export MESA_GL_VERSION_OVERRIDE=3.3' 'XAUTH="$HOME/.Xauthority"' 'touch "$XAUTH" && chmod 600 "$XAUTH"' 'CK=$(/bin/busybox head -c 16 /dev/urandom | /bin/busybox od -An -tx1 | /bin/busybox tr -d " \\n")' '[ -n "$CK" ] && {' "  printf '\\x00' >> \"\$XAUTH\"" "  printf '%s' \"\$DISPLAY\" >> \"\$XAUTH\"" "  printf '\\x00' >> \"\$XAUTH\"" "  printf '%s' 'MIT-MAGIC-COOKIE-1' >> \"\$XAUTH\"" "  printf '\\x00' >> \"\$XAUTH\"" "  printf '%04d' 16 >> \"\$XAUTH\"" "  printf '%s' \"\$CK\" >> \"\$XAUTH\"" '}' 'echo "=== Initializing Xorg (llvmpipe CPU rendering) ==="' 'if [ ! -e /usr/lib/xorg/Xorg ] && [ -x /usr/bin/Xorg ]; then' '  echo "Creating Xorg symlink: /usr/lib/xorg/Xorg -> /usr/bin/Xorg"' '  mkdir -p /usr/lib/xorg' '  /bin/busybox ln -sf /usr/bin/Xorg /usr/lib/xorg/Xorg' 'fi' '/bin/busybox killall Xorg 2>/dev/null' '/bin/busybox killall X 2>/dev/null' 'sleep 1' 'XORG=""' 'if [ -x /usr/bin/Xorg ]; then' '  XORG="/usr/bin/Xorg"' 'elif [ -x /usr/lib/xorg/Xorg ]; then' '  XORG="/usr/lib/xorg/Xorg"' 'elif [ -x /usr/bin/X ]; then' '  XORG="/usr/bin/X"' 'fi' 'if [ -n "$XORG" ]; then' '  echo "Starting Xorg: $XORG"' '  "$XORG" "$DISPLAY" &' 'else' '  echo "ERROR: No X server found"; exit 1' 'fi' 'T=0' 'while [ $T -lt 10 ]; do' '  /bin/busybox pgrep Xorg >/dev/null 2>&1 && break' '  /bin/busybox pgrep X >/dev/null 2>&1 && break' '  sleep 1; T=$((T+1))' 'done' '/bin/busybox pgrep Xorg >/dev/null 2>&1 || /bin/busybox pgrep X >/dev/null 2>&1 || { echo "ERROR: X failed"; exit 1; }' 'echo "X started on $DISPLAY"' '[ -x "$HOME/.xinitrc" ] && exec "$HOME/.xinitrc"' 'exec xterm' \
-            > "$R/usr/bin/startx"
-          chmod +x "$R/usr/bin/startx"
-          printf '%s\n' '#!/bin/sh' 'export HOME=/root DISPLAY=:0' 'export XDG_SESSION_TYPE=x11' 'export XDG_CURRENT_DESKTOP=GudaoUI' '# llvmpipe CPU software rendering' 'export LIBGL_ALWAYS_SOFTWARE=1' 'export MESA_LOADER_DRIVER_OVERRIDE=llvmpipe' 'export MESA_GL_VERSION_OVERRIDE=3.3' 'WM="${1:-twm}"' 'case "$WM" in' '  icewm) printf '"'"'#!/bin/sh\nexport DISPLAY=:0\nexec icewm --replace\n'"'"' > /root/.xinitrc ;;' '  fluxbox) printf '"'"'#!/bin/sh\nexport DISPLAY=:0\nexec fluxbox\n'"'"' > /root/.xinitrc ;;' '  *) printf '"'"'#!/bin/sh\nexport DISPLAY=:0\nexec twm\n'"'"' > /root/.xinitrc ;;' 'esac' '/bin/busybox chmod +x /root/.xinitrc' 'if [ -x /usr/bin/startx ]; then exec startx' 'elif [ -x /usr/bin/xinit ]; then exec xinit -- /usr/bin/Xorg :0' 'else echo "ERROR: no X init"; exit 1; fi' \
-            > "$R/usr/local/bin/start-desktop"
+          
+          # === 修复9：配置start-desktop脚本 ===
+          printf '%s\n' '#!/bin/sh' 'export HOME=/root DISPLAY=:0' 'export XDG_SESSION_TYPE=x11' 'export XDG_CURRENT_DESKTOP=GudaoUI' '# llvmpipe CPU software rendering' 'export LIBGL_ALWAYS_SOFTWARE=1' 'export MESA_LOADER_DRIVER_OVERRIDE=llvmpipe' 'export MESA_GL_VERSION_OVERRIDE=3.3' 'WM="${1:-twm}"' 'case "$WM" in' '  icewm) printf '"'"'#!/bin/sh\nexport DISPLAY=:0\nexec icewm --replace\n'"'"' > /root/.xinitrc ;;' '  fluxbox) printf '"'"'#!/bin/sh\nexport DISPLAY=:0\nexec fluxbox\n'"'"' > /root/.xinitrc ;;' '  *) printf '"'"'#!/bin/sh\nexport DISPLAY=:0\nexec twm\n'"'"' > /root/.xinitrc ;;' 'esac' '/bin/busybox chmod +x /root/.xinitrc' 'if [ -x /usr/bin/startx ]; then exec startx' 'elif [ -x /usr/bin/xinit ]; then exec xinit -- /usr/bin/Xorg :0' 'else echo "ERROR: no X init"; exit 1; fi' > "$R/usr/local/bin/start-desktop"
           chmod +x "$R/usr/local/bin/start-desktop"
-          printf '%s\n' '#!/bin/sh' 'echo "GudaoUI Desktop"' '/bin/busybox command -v icewm >/dev/null 2>&1 && echo "  start-desktop icewm"' '/bin/busybox command -v fluxbox >/dev/null 2>&1 && echo "  start-desktop fluxbox"' '/bin/busybox command -v twm >/dev/null 2>&1 && echo "  start-desktop twm"' 'if [ -f /etc/default-desktop ]; then W=$(/bin/busybox cat /etc/default-desktop); echo "Default: $W"; start-desktop "$W"' 'else start-desktop twm; fi' \
-            > "$R/usr/local/bin/desktop"
+          
+          # === 修复10：配置desktop脚本 ===
+          printf '%s\n' '#!/bin/sh' 'echo "GudaoUI Desktop"' '/bin/busybox command -v icewm >/dev/null 2>&1 && echo "  start-desktop icewm"' '/bin/busybox command -v fluxbox >/dev/null 2>&1 && echo "  start-desktop fluxbox"' '/bin/busybox command -v twm >/dev/null 2>&1 && echo "  start-desktop twm"' 'if [ -f /etc/default-desktop ]; then W=$(/bin/busybox cat /etc/default-desktop); echo "Default: $W"; start-desktop "$W"' 'else start-desktop twm; fi' > "$R/usr/local/bin/desktop"
           chmod +x "$R/usr/local/bin/desktop"
           case "${{ env.DESKTOP }}" in
             icewm) echo "icewm" > "$R/etc/default-desktop" ;;
@@ -829,15 +696,17 @@ jobs:
           chmod 644 "$R/root/.icewm/preferences"
           
           mkdir -p "$R/root"
-          printf '%s\n' 'NoDefaults' 'RandomPlacement' 'Button1 = root:f.menu TwmRootMenu' 'Button2 = root:f.iconify' 'Button3 = root:f.resize' 'Button1 = title:f.move' 'Button2 = title:f.raise' 'Button3 = title:f.resize' 'Button1 = icon:f.iconify' 'Button2 = icon:f.raise' 'Button3 = icon:f.reshape' 'Button1 = frame:f.move' 'Button2 = frame:f.iconify' 'Button3 = frame:f.resize' 'Button1 = shape:f.reshape' 'Button2 = shape:f.iconify' 'Button3 = shape:f.resize' 'Button1 = quit:f.quit' 'Button1 = resize:f.resize' 'Button1 = iconify:f.iconify' 'Button1 = maximize:f.maximize' 'Button1 = delete:f.delete' '"GudaoUI Menu"' 'f.exec "xterm" xterm -geometry 80x24+50+50 -bg black -fg green' 'f.exec "xclock" xclock' 'f.exec "xload" xload' 'f.nop' 'f.delete' 'f.destroy' 'f.nop' 'f.quit' 'f.restart' 'f.nop' 'f.reshow' 'f.focus' 'f.nop' 'f.iconify' 'f.deiconify' 'f.nop' 'f.raise' 'f.lower' 'f.nop' 'f.move' 'f.resize' 'f.nop' 'f.refresh' 'f.totop' 'f.tobottom' 'f.totop' 'f.tobottom' > "$R/root/.twmrc"
+          printf '%s\n' 'NoDefaults' 'RandomPlacement' 'Button1 = root:f.menu TwmRootMenu' 'Button2 = root:f.iconify' 'Button3 = root:f.resize' 'Button1 = title:f.move' 'Button2 = title:f.raise' 'Button3 = title:f.resize' 'Button1 = icon:f.iconify' 'Button2 = icon:f.raise' 'Button3 = icon:f.reshape' 'Button1 = frame:f.move' 'Button2 = frame:f.iconify' 'Button3 = frame:f.resize' 'Button1 = quit:f.quit' 'Button1 = resize:f.resize' 'Button1 = iconify:f.iconify' 'Button1 = maximize:f.maximize' 'Button1 = delete:f.delete' '"GudaoUI Menu"' 'f.exec "xterm" xterm -geometry 80x24+50+50 -bg black -fg green' 'f.exec "xclock" xclock' 'f.exec "xload" xload' 'f.nop' 'f.delete' 'f.destroy' 'f.nop' 'f.quit' 'f.restart' 'f.nop' 'f.reshow' 'f.focus' 'f.nop' 'f.iconify' 'f.deiconify' 'f.nop' 'f.raise' 'f.lower' 'f.nop' 'f.move' 'f.resize' 'f.nop' 'f.refresh' 'f.totop' 'f.tobottom' 'f.totop' 'f.tobottom' > "$R/root/.twmrc"
           chmod 644 "$R/root/.twmrc"
           
           echo "Desktop: $(du -sh "$R" | cut -f1)"
+
       - name: Create squashfs
         run: |
           WS="$GITHUB_WORKSPACE"
           mksquashfs "$WS/rootfs" "$WS/rootfs.squashfs" -comp xz -b 1M
           du -h "$WS/rootfs.squashfs"
+
       - name: Build initramfs
         run: |
           WS="$GITHUB_WORKSPACE"
@@ -858,6 +727,7 @@ jobs:
           cd "$ID"
           find . | cpio -o -H newc | gzip > "$WS/initramfs.cpio.gz"
           du -h "$WS/initramfs.cpio.gz"
+
       - name: Create ISO
         run: |
           WS="$GITHUB_WORKSPACE"
@@ -885,6 +755,7 @@ jobs:
           esac
           grub-mkrescue -o "$ISO_NAME" "$WS/iso/"
           du -h "$ISO_NAME"
+
       - name: Upload ISO
         uses: actions/upload-artifact@v4
         with:
