@@ -98,7 +98,7 @@ jobs:
           wget -q https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.tar.xz
           tar -xf linux-6.18.tar.xz
 
-      # ========== 修复点1：内核开启帧缓冲与虚拟显卡驱动 ==========
+      # 内核配置：新增帧缓冲与虚拟显卡驱动（Xorg运行基础）
       - name: Configure kernel
         run: |
           cd linux-6.18
@@ -116,7 +116,6 @@ jobs:
             FAILOVER NET_FAILOVER; do
             scripts/config --module "$o"
           done
-          # 新增：帧缓冲、DRM虚拟显卡、终端支持（Xorg运行的底层基础）
           for o in PACKET UNIX INET IP_PNP IP_PNP_DHCP \
             NETDEVICES NET_CORE ACPI ACPI_BUTTON \
             FB FB_VESA FB_EFI FRAMEBUFFER_CONSOLE \
@@ -585,7 +584,7 @@ jobs:
           echo "=== Twm package details ==="
           dpkg-deb -I twm*.deb 2>/dev/null || echo "Cannot inspect twm deb"
 
-      # ========== 修复点2：重写桌面安装全逻辑 ==========
+      # ========== 修复后的桌面安装步骤 ==========
       - name: Install desktop into rootfs
         if: env.DESKTOP != 'none'
         run: |
@@ -602,24 +601,15 @@ jobs:
           echo "Extracted $EX debs"
 
           # 1. 补齐X11核心依赖库（含xcb底层依赖）
-          echo "=== Copying X11 core libraries and tools ==="
+          echo "=== Copying X11 core libraries ==="
           X11_LIBS="libX11.so.6 libXext.so.6 libXmu.so.6 libXt.so.6 libXaw.so.7 libXpm.so.4 libxcb.so.1 libXau.so.6 libXdmcp.so.6"
           for lib in $X11_LIBS; do
-            HOST_LIB=$(find /usr/lib /usr/lib/x86_64-linux-gnu -name "$lib" 2>/dev/null | head -1)
+            HOST_LIB=$(find /usr/lib /usr/lib/x86_64-linux-gnu -name "$lib" 2>/dev/null | head -1) || true
             if [ -n "$HOST_LIB" ]; then
               TARGET_DIR="$R$(dirname "$HOST_LIB")"
               mkdir -p "$TARGET_DIR"
               cp "$HOST_LIB" "$TARGET_DIR/"
               echo "Copied: $lib"
-            fi
-          done
-
-          # 复制X基础工具
-          for bin in xsetroot xset xhost; do
-            HOST_BIN=$(which "$bin" 2>/dev/null)
-            if [ -n "$HOST_BIN" ]; then
-              cp "$HOST_BIN" "$R/usr/bin/"
-              echo "Copied tool: $bin"
             fi
           done
 
@@ -641,117 +631,117 @@ jobs:
           echo "=== Creating Xorg config for VM ==="
           mkdir -p "$R/etc/X11/xorg.conf.d"
           cat > "$R/etc/X11/xorg.conf.d/10-vm.conf" << 'XEOF'
-          Section "ServerFlags"
-            Option "AIGLX" "false"
-            Option "GLX" "false"
-            Option "DRI" "false"
-            Option "DontZap" "false"
-          EndSection
+Section "ServerFlags"
+  Option "AIGLX" "false"
+  Option "GLX" "false"
+  Option "DRI" "false"
+  Option "DontZap" "false"
+EndSection
 
-          Section "Device"
-            Identifier "Card0"
-            Driver "modesetting"
-            Option "NoAccel" "true"
-            Option "SWcursor" "true"
-          EndSection
+Section "Device"
+  Identifier "Card0"
+  Driver "modesetting"
+  Option "NoAccel" "true"
+  Option "SWcursor" "true"
+EndSection
 
-          Section "Screen"
-            Identifier "Screen0"
-            Device "Card0"
-            DefaultDepth 24
-            SubSection "Display"
-              Depth 24
-              Modes "1024x768" "800x600"
-            EndSubSection
-          EndSection
+Section "Screen"
+  Identifier "Screen0"
+  Device "Card0"
+  DefaultDepth 24
+  SubSection "Display"
+    Depth 24
+    Modes "1024x768" "800x600"
+  EndSubSection
+EndSection
 
-          Section "InputDevice"
-            Identifier "Mouse0"
-            Driver "mouse"
-            Option "Protocol" "auto"
-            Option "Device" "/dev/input/mice"
-          EndSection
+Section "InputDevice"
+  Identifier "Mouse0"
+  Driver "mouse"
+  Option "Protocol" "auto"
+  Option "Device" "/dev/input/mice"
+EndSection
 
-          Section "InputDevice"
-            Identifier "Keyboard0"
-            Driver "kbd"
-            Option "XkbLayout" "us"
-          EndSection
-          XEOF
+Section "InputDevice"
+  Identifier "Keyboard0"
+  Driver "kbd"
+  Option "XkbLayout" "us"
+EndSection
+XEOF
 
           cat > "$R/etc/X11/xorg.conf.d/20-fbdev-fallback.conf" << 'XEOF'
-          Section "Device"
-            Identifier "CardFb"
-            Driver "fbdev"
-            Option "NoAccel" "true"
-            Option "SWcursor" "true"
-          EndSection
-          XEOF
+Section "Device"
+  Identifier "CardFb"
+  Driver "fbdev"
+  Option "NoAccel" "true"
+  Option "SWcursor" "true"
+EndSection
+XEOF
 
           # 4. 标准桌面启动脚本：xinit同步启动，解决时序+认证问题
           echo "=== Creating start-desktop script ==="
           cat > "$R/usr/local/bin/start-desktop" << 'XEOF'
-          #!/bin/sh
-          export HOME=/root
-          export DISPLAY=:0
-          export XDG_SESSION_TYPE=x11
-          export XDG_CURRENT_DESKTOP=GudaoUI
-          export LIBGL_ALWAYS_SOFTWARE=1
-          export MESA_LOADER_DRIVER_OVERRIDE=llvmpipe
-          export MESA_GL_VERSION_OVERRIDE=3.3
+#!/bin/sh
+export HOME=/root
+export DISPLAY=:0
+export XDG_SESSION_TYPE=x11
+export XDG_CURRENT_DESKTOP=GudaoUI
+export LIBGL_ALWAYS_SOFTWARE=1
+export MESA_LOADER_DRIVER_OVERRIDE=llvmpipe
+export MESA_GL_VERSION_OVERRIDE=3.3
 
-          WM="${1:-twm}"
+WM="${1:-twm}"
 
-          # 生成窗口管理器启动配置
-          case "$WM" in
-            icewm)
-              printf '%s\n' '#!/bin/sh' 'exec icewm' > $HOME/.xinitrc
-              ;;
-            fluxbox)
-              printf '%s\n' '#!/bin/sh' 'exec fluxbox' > $HOME/.xinitrc
-              ;;
-            *)
-              printf '%s\n' '#!/bin/sh' 'xsetroot -solid gray' 'exec twm' > $HOME/.xinitrc
-              ;;
-          esac
-          chmod +x $HOME/.xinitrc
+# 生成窗口管理器启动配置
+case "$WM" in
+  icewm)
+    printf '%s\n' '#!/bin/sh' 'exec icewm' > $HOME/.xinitrc
+    ;;
+  fluxbox)
+    printf '%s\n' '#!/bin/sh' 'exec fluxbox' > $HOME/.xinitrc
+    ;;
+  *)
+    printf '%s\n' '#!/bin/sh' 'exec twm' > $HOME/.xinitrc
+    ;;
+esac
+chmod +x $HOME/.xinitrc
 
-          # 清理残留进程与Socket
-          killall Xorg 2>/dev/null
-          killall X 2>/dev/null
-          sleep 1
-          mkdir -p /tmp/.X11-unix
-          chmod 1777 /tmp/.X11-unix
-          rm -f /tmp/.X11-unix/X0
+# 清理残留进程与Socket（忽略不存在进程的报错）
+killall Xorg 2>/dev/null || true
+killall X 2>/dev/null || true
+sleep 1
+mkdir -p /tmp/.X11-unix
+chmod 1777 /tmp/.X11-unix
+rm -f /tmp/.X11-unix/X0
 
-          # 标准xinit启动：X服务就绪后自动执行窗口管理器，天然保证时序正确
-          if [ -x /usr/bin/xinit ]; then
-            exec xinit -- /usr/bin/Xorg :0 vt1 -nolisten tcp
-          elif [ -x /usr/bin/startx ]; then
-            exec startx -- :0 vt1 -nolisten tcp
-          else
-            echo "ERROR: no xinit/startx found"
-            exit 1
-          fi
-          XEOF
+# 标准xinit启动：X服务就绪后自动执行窗口管理器，天然保证时序正确
+if [ -x /usr/bin/xinit ]; then
+  exec xinit -- /usr/bin/Xorg :0 vt1 -nolisten tcp
+elif [ -x /usr/bin/startx ]; then
+  exec startx -- :0 vt1 -nolisten tcp
+else
+  echo "ERROR: no xinit/startx found"
+  exit 1
+fi
+XEOF
           chmod +x "$R/usr/local/bin/start-desktop"
 
           # 5. desktop快捷入口命令
           echo "=== Creating desktop command ==="
           cat > "$R/usr/local/bin/desktop" << 'XEOF'
-          #!/bin/sh
-          echo "GudaoUI Desktop"
-          command -v icewm >/dev/null 2>&1 && echo "  start-desktop icewm"
-          command -v fluxbox >/dev/null 2>&1 && echo "  start-desktop fluxbox"
-          command -v twm >/dev/null 2>&1 && echo "  start-desktop twm"
-          if [ -f /etc/default-desktop ]; then
-            W=$(cat /etc/default-desktop)
-            echo "Default: $W"
-            start-desktop "$W"
-          else
-            start-desktop twm
-          fi
-          XEOF
+#!/bin/sh
+echo "GudaoUI Desktop"
+command -v icewm >/dev/null 2>&1 && echo "  start-desktop icewm"
+command -v fluxbox >/dev/null 2>&1 && echo "  start-desktop fluxbox"
+command -v twm >/dev/null 2>&1 && echo "  start-desktop twm"
+if [ -f /etc/default-desktop ]; then
+  W=$(cat /etc/default-desktop)
+  echo "Default: $W"
+  start-desktop "$W"
+else
+  start-desktop twm
+fi
+XEOF
           chmod +x "$R/usr/local/bin/desktop"
 
           # 6. 设置默认桌面环境
@@ -765,103 +755,103 @@ jobs:
           # 7. 各窗口管理器配置文件
           mkdir -p "$R/root/.fluxbox"
           cat > "$R/root/.fluxbox/init" << 'XEOF'
-          session.screen0.toolbar.visible: true
-          session.screen0.toolbar.widthPercent: 100
-          session.screen0.tabs.usePixmap: false
-          session.screen0.menu.moveOnResize: true
-          session.screen0.edgeSnapThreshold: 10
-          session.screen0.windowPlacement: RowSmartPlacement
-          session.screen0.focusNewWindows: true
-          session.screen0.focusModel: ClickFocus
-          XEOF
+session.screen0.toolbar.visible: true
+session.screen0.toolbar.widthPercent: 100
+session.screen0.tabs.usePixmap: false
+session.screen0.menu.moveOnResize: true
+session.screen0.edgeSnapThreshold: 10
+session.screen0.windowPlacement: RowSmartPlacement
+session.screen0.focusNewWindows: true
+session.screen0.focusModel: ClickFocus
+XEOF
           chmod 644 "$R/root/.fluxbox/init"
 
           cat > "$R/root/.fluxbox/keys" << 'XEOF'
-          Mod1 F2 :ExecCommand:xterm &
-          Mod1 F3 :ExecCommand:xterm &
-          Mod1 F4 :Close
-          Mod1 Tab :NextWindow
-          Control Mod1 T :ExecCommand:xterm &
-          XEOF
+Mod1 F2 :ExecCommand:xterm &
+Mod1 F3 :ExecCommand:xterm &
+Mod1 F4 :Close
+Mod1 Tab :NextWindow
+Control Mod1 T :ExecCommand:xterm &
+XEOF
           chmod 644 "$R/root/.fluxbox/keys"
 
           cat > "$R/root/.fluxbox/apps" << 'XEOF'
-          [app] (name=xterm) {geometry 100x30+50+50}
-          [app] (name=xterm) {sticky}
-          XEOF
+[app] (name=xterm) {geometry 100x30+50+50}
+[app] (name=xterm) {sticky}
+XEOF
           chmod 644 "$R/root/.fluxbox/apps"
 
           mkdir -p "$R/root/.icewm"
           cat > "$R/root/.icewm/preferences" << 'XEOF'
-          TaskBarShowClock = 1
-          TaskBarShowMemory = 1
-          TaskBarShowCPUStatus = 1
-          TaskBarShowWindows = 1
-          ShowProgramsMenu = 1
-          ShowLogoutConfirmation = 1
-          ClockCommand = xclock -digital -24h -brief
-          ClockFmt = %H:%M
-          XEOF
+TaskBarShowClock = 1
+TaskBarShowMemory = 1
+TaskBarShowCPUStatus = 1
+TaskBarShowWindows = 1
+ShowProgramsMenu = 1
+ShowLogoutConfirmation = 1
+ClockCommand = xclock -digital -24h -brief
+ClockFmt = %H:%M
+XEOF
           chmod 644 "$R/root/.icewm/preferences"
 
           cat > "$R/root/.twmrc" << 'XEOF'
-          NoDefaults
-          RandomPlacement
-          Button1 = root:f.menu TwmRootMenu
-          Button2 = root:f.iconify
-          Button3 = root:f.resize
-          Button1 = title:f.move
-          Button2 = title:f.raise
-          Button3 = title:f.resize
-          Button1 = icon:f.iconify
-          Button2 = icon:f.raise
-          Button3 = icon:f.reshape
-          Button1 = frame:f.move
-          Button2 = frame:f.iconify
-          Button3 = frame:f.resize
-          Button1 = quit:f.quit
-          Button1 = resize:f.resize
-          Button1 = iconify:f.iconify
-          Button1 = maximize:f.maximize
-          Button1 = delete:f.delete
-          "GudaoUI Menu"
-          f.exec "xterm" xterm -geometry 80x24+50+50 -bg black -fg green
-          f.exec "xclock" xclock
-          f.exec "xload" xload
-          f.nop
-          f.delete
-          f.destroy
-          f.nop
-          f.quit
-          f.restart
-          f.nop
-          f.reshow
-          f.focus
-          f.nop
-          f.iconify
-          f.deiconify
-          f.nop
-          f.raise
-          f.lower
-          f.nop
-          f.move
-          f.resize
-          f.nop
-          f.refresh
-          f.totop
-          f.tobottom
-          f.totop
-          f.tobottom
-          XEOF
+NoDefaults
+RandomPlacement
+Button1 = root:f.menu TwmRootMenu
+Button2 = root:f.iconify
+Button3 = root:f.resize
+Button1 = title:f.move
+Button2 = title:f.raise
+Button3 = title:f.resize
+Button1 = icon:f.iconify
+Button2 = icon:f.raise
+Button3 = icon:f.reshape
+Button1 = frame:f.move
+Button2 = frame:f.iconify
+Button3 = frame:f.resize
+Button1 = quit:f.quit
+Button1 = resize:f.resize
+Button1 = iconify:f.iconify
+Button1 = maximize:f.maximize
+Button1 = delete:f.delete
+"GudaoUI Menu"
+f.exec "xterm" xterm -geometry 80x24+50+50 -bg black -fg green
+f.exec "xclock" xclock
+f.exec "xload" xload
+f.nop
+f.delete
+f.destroy
+f.nop
+f.quit
+f.restart
+f.nop
+f.reshow
+f.focus
+f.nop
+f.iconify
+f.deiconify
+f.nop
+f.raise
+f.lower
+f.nop
+f.move
+f.resize
+f.nop
+f.refresh
+f.totop
+f.tobottom
+f.totop
+f.tobottom
+XEOF
           chmod 644 "$R/root/.twmrc"
 
           # 8. X11标准目录与兜底xinitrc
           mkdir -p "$R/etc/X11/xinit" "$R/root"
           cat > "$R/etc/X11/xinit/xinitrc" << 'XEOF'
-          #!/bin/sh
-          [ -f "$HOME/.xinitrc" ] && exec "$HOME/.xinitrc"
-          exec xterm
-          XEOF
+#!/bin/sh
+[ -f "$HOME/.xinitrc" ] && exec "$HOME/.xinitrc"
+exec xterm
+XEOF
           chmod +x "$R/etc/X11/xinit/xinitrc"
 
           echo "Desktop: $(du -sh "$R" | cut -f1)"
